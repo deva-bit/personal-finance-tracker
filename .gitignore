@@ -1,0 +1,42 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# WhatsApp session data (contains your login)
+whatsapp-bot/.wwebjs_auth/
+whatsapp-bot/.wwebjs_cache/
+whatsapp_data/
+
+# Docker volumes (database and n8n data)
+postgres_data/
+n8n_data/
+
+# Environment files (if you add passwords)
+.env
+.env.local
+
+# Excel exports (optional - remove if you want to track them)
+*.xlsx
+expenses-export.xlsx
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp

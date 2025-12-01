@@ -1,0 +1,98 @@
+{
+  "name": "WhatsApp Expense Tracker - Fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Get the webhook data\nconst webhookData = $input.first().json;\n\n// Extract message and phone number\nconst message = webhookData.body?.data?.message?.conversation || '';\nconst phone = webhookData.body?.data?.key?.remoteJid || 'unknown';\n\n// Parse the message: \"add description amount category\"\nconst parts = message.trim().split(/\\s+/);\n\nif (parts.length < 3 || parts[0].toLowerCase() !== 'add') {\n  return [{\n    json: {\n      error: true,\n      message: 'Invalid format. Use: add description amount category'\n    }\n  }];\n}\n\nconst description = parts[1];\nconst amount = parseFloat(parts[2]);\nconst category = parts[3] || 'general';\n\n// Return the parsed data\nreturn [{\n  json: {\n    amount: amount,\n    category: category,\n    description: description,\n    phone_number: phone.replace('@c.us', ''),\n    error: false\n  }\n}];"
+      },
+      "id": "parse-message-node",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO expenses (amount, category, description, phone_number, date) \nVALUES (\n  {{ $json.amount }},\n  '{{ $json.category }}',\n  '{{ $json.description }}',\n  '{{ $json.phone_number }}',\n  CURRENT_DATE\n)\nRETURNING *;",
+        "options": {}
+      },
+      "id": "database-node",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"✅ Expense added!\\n💰 Amount: $\" + $json.amount + \"\\n📝 Description: \" + $json.description + \"\\n🏷️ Category: \" + $json.category}",
+        "options": {}
+      },
+      "id": "respond-node",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

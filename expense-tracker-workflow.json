@@ -1,0 +1,151 @@
+{
+  "name": "WhatsApp Expense Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "whatsapp-expense"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.body.data.message.conversation}}",
+              "operation": "contains",
+              "value2": "add"
+            }
+          ]
+        }
+      },
+      "id": "if-add-expense",
+      "name": "If Add Expense",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO expenses (amount, category, description, date, phone_number) VALUES ({{$json.amount}}, '{{$json.category}}', '{{$json.description}}', CURRENT_TIMESTAMP, '{{$json.phone}}');",
+        "options": {}
+      },
+      "id": "save-expense",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse expense message\nconst message = $input.item.json.body.data.message.conversation || '';\nconst phone = $input.item.json.body.data.key.remoteJid;\n\n// Example: \"add lunch 15 food\"\nconst parts = message.toLowerCase().split(' ');\n\nif (parts[0] === 'add' && parts.length >= 3) {\n  const description = parts[1];\n  const amount = parseFloat(parts[2]);\n  const category = parts[3] || 'general';\n  \n  return {\n    json: {\n      amount: amount,\n      category: category,\n      description: description,\n      phone: phone,\n      success: true\n    }\n  };\n} else if (parts[0] === 'report') {\n  return {\n    json: {\n      action: 'report',\n      period: parts[1] || 'today',\n      phone: phone\n    }\n  };\n} else if (parts[0] === 'help') {\n  return {\n    json: {\n      action: 'help',\n      phone: phone\n    }\n  };\n}\n\nreturn {\n  json: {\n    error: true,\n    phone: phone\n  }\n};"
+      },
+      "id": "parse-message",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "url": "http://evolution-api:8080/message/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "your-secret-key-change-this"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "text",
+              "value": "✅ Expense added!\n💰 Amount: ${{$json.amount}}\n📝 Description: {{$json.description}}\n🏷️ Category: {{$json.category}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-confirmation",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "If Add Expense",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Add Expense": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "1"
+}

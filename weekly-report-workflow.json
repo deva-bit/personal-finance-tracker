@@ -1,0 +1,139 @@
+{
+  "name": "Weekly Expense Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "schedule-node",
+      "name": "Schedule - Every Monday 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Weekly summary\nSELECT \n  SUM(amount) as weekly_total,\n  COUNT(*) as total_expenses\nFROM expenses\nWHERE date >= CURRENT_DATE - INTERVAL '7 days';\n\n-- By category\nSELECT \n  category,\n  COUNT(*) as count,\n  SUM(amount) as total\nFROM expenses\nWHERE date >= CURRENT_DATE - INTERVAL '7 days'\nGROUP BY category\nORDER BY total DESC;",
+        "options": {}
+      },
+      "id": "query-weekly",
+      "name": "Get Weekly Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Monthly summary\nSELECT \n  SUM(amount) as monthly_total,\n  COUNT(*) as total_expenses\nFROM expenses\nWHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)\n  AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE);\n\n-- Monthly by category\nSELECT \n  category,\n  COUNT(*) as count,\n  SUM(amount) as total\nFROM expenses\nWHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)\n  AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)\nGROUP BY category\nORDER BY total DESC;",
+        "options": {}
+      },
+      "id": "query-monthly",
+      "name": "Get Monthly Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 450],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Get weekly and monthly data\nconst weeklyData = $('Get Weekly Data').all();\nconst monthlyData = $('Get Monthly Data').all();\n\n// Parse weekly summary\nconst weeklyTotal = weeklyData[0]?.json?.weekly_total || 0;\nconst weeklyExpenses = weeklyData[0]?.json?.total_expenses || 0;\n\n// Parse monthly summary  \nconst monthlyTotal = monthlyData[0]?.json?.monthly_total || 0;\nconst monthlyExpenses = monthlyData[0]?.json?.total_expenses || 0;\n\n// Build category breakdown for weekly\nlet weeklyCategories = '';\nfor (let i = 1; i < weeklyData.length; i++) {\n  const cat = weeklyData[i].json;\n  weeklyCategories += `\\n  • ${cat.category}: RM ${parseFloat(cat.total).toFixed(2)} (${cat.count} items)`;\n}\n\n// Build category breakdown for monthly\nlet monthlyCategories = '';\nfor (let i = 1; i < monthlyData.length; i++) {\n  const cat = monthlyData[i].json;\n  monthlyCategories += `\\n  • ${cat.category}: RM ${parseFloat(cat.total).toFixed(2)} (${cat.count} items)`;\n}\n\nconst currentDate = new Date();\nconst monthName = currentDate.toLocaleString('default', { month: 'long' });\nconst year = currentDate.getFullYear();\n\n// Create email body\nconst emailBody = `\n<h2>📊 Weekly Expense Report</h2>\n<p><strong>Week ending:</strong> ${currentDate.toLocaleDateString('en-MY')}</p>\n\n<h3>💰 Last 7 Days Summary</h3>\n<ul>\n  <li><strong>Total Spent:</strong> RM ${parseFloat(weeklyTotal).toFixed(2)}</li>\n  <li><strong>Number of Expenses:</strong> ${weeklyExpenses}</li>\n  <li><strong>Average per expense:</strong> RM ${weeklyExpenses > 0 ? (parseFloat(weeklyTotal) / weeklyExpenses).toFixed(2) : '0.00'}</li>\n</ul>\n\n<h4>By Category:</h4>\n<p>${weeklyCategories || 'No expenses this week'}</p>\n\n<hr>\n\n<h3>📅 ${monthName} ${year} - Month to Date</h3>\n<ul>\n  <li><strong>Total Spent:</strong> RM ${parseFloat(monthlyTotal).toFixed(2)}</li>\n  <li><strong>Number of Expenses:</strong> ${monthlyExpenses}</li>\n  <li><strong>Average per expense:</strong> RM ${monthlyExpenses > 0 ? (parseFloat(monthlyTotal) / monthlyExpenses).toFixed(2) : '0.00'}</li>\n</ul>\n\n<h4>By Category:</h4>\n<p>${monthlyCategories || 'No expenses this month'}</p>\n\n<hr>\n<p><em>This is an automated report from your WhatsApp Expense Tracker</em></p>\n`;\n\nreturn [{\n  json: {\n    subject: `📊 Weekly Expense Report - ${currentDate.toLocaleDateString('en-MY')}`,\n    body: emailBody,\n    weeklyTotal: weeklyTotal,\n    monthlyTotal: monthlyTotal\n  }\n}];"
+      },
+      "id": "format-email",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 375]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@expense-tracker.local",
+        "toEmail": "YOUR_EMAIL@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [850, 375]
+    }
+  ],
+  "connections": {
+    "Schedule - Every Monday 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Monthly Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Data": {
+      "main": [
+        [
+          {
+            "node": "Format Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Monthly Data": {
+      "main": [
+        [
+          {
+            "node": "Format Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

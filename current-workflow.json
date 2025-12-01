@@ -1,0 +1,131 @@
+﻿{
+    "value":  [
+                  {
+                      "createdAt":  "2025-12-01T03:42:27.669Z",
+                      "updatedAt":  "2025-12-01T06:05:36.514Z",
+                      "id":  "fYGr8BUvqSeDSQYr",
+                      "name":  "Simple Expense Tracker",
+                      "active":  true,
+                      "isArchived":  false,
+                      "nodes":  [
+                                    {
+                                        "parameters":  {
+                                                           "httpMethod":  "POST",
+                                                           "path":  "whatsapp-webhook",
+                                                           "responseMode":  "lastNode",
+                                                           "options":  {
+
+                                                                       }
+                                                       },
+                                        "id":  "e5008561-bc0d-4490-ba15-e40f8a070e6d",
+                                        "name":  "Webhook",
+                                        "type":  "n8n-nodes-base.webhook",
+                                        "typeVersion":  1.1,
+                                        "position":  [
+                                                         768,
+                                                         272
+                                                     ],
+                                        "webhookId":  "18e811fc-35fa-49ac-bb01-02ba0d1062c9"
+                                    },
+                                    {
+                                        "parameters":  {
+                                                           "operation":  "executeQuery",
+                                                           "query":  "=INSERT INTO expenses (amount, category, description, phone_number) \nVALUES ( \n  {{ $(\u0027Webhook\u0027).first().json.body.data.message.conversation.split(\u0027 \u0027)[2] }}, \n  \u0027{{ $(\u0027Webhook\u0027).first().json.body.data.message.conversation.split(\u0027 \u0027)[3] || \"general\" }}\u0027, \n  \u0027{{ $(\u0027Webhook\u0027).first().json.body.data.message.conversation.split(\u0027 \u0027)[1] }}\u0027, \n  \u0027{{ $(\u0027Webhook\u0027).first().json.body.data.key.remoteJid }}\u0027 \n) \nRETURNING *;",
+                                                           "options":  {
+
+                                                                       }
+                                                       },
+                                        "id":  "0a967831-ea3d-4306-a52c-56f172ac2c3c",
+                                        "name":  "Save to Database",
+                                        "type":  "n8n-nodes-base.postgres",
+                                        "typeVersion":  2.4,
+                                        "position":  [
+                                                         1216,
+                                                         272
+                                                     ],
+                                        "credentials":  {
+                                                            "postgres":  {
+                                                                             "id":  "bTGkR7pFa0wl9Xpa",
+                                                                             "name":  "Postgres account 2"
+                                                                         }
+                                                        }
+                                    },
+                                    {
+                                        "parameters":  {
+                                                           "respondWith":  "json",
+                                                           "responseBody":  "={\"success\": true, \"message\": \"Γ£à Expense added!\\n≡ƒÆ░ Amount: $\" + $json.amount + \"\\n≡ƒô¥ Description: \" + $json.description + \"\\n≡ƒÅ╖∩╕Å Category: \" + $json.category}",
+                                                           "options":  {
+
+                                                                       }
+                                                       },
+                                        "id":  "caba75a7-3866-454a-8b52-47d188155bad",
+                                        "name":  "Respond",
+                                        "type":  "n8n-nodes-base.respondToWebhook",
+                                        "typeVersion":  1.1,
+                                        "position":  [
+                                                         1440,
+                                                         272
+                                                     ]
+                                    }
+                                ],
+                      "connections":  {
+                                          "Webhook":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Save to Database",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                                          "Save to Database":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Respond",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               }
+                                      },
+                      "settings":  {
+                                       "executionOrder":  "v1"
+                                   },
+                      "staticData":  null,
+                      "meta":  {
+                                   "templateCredsSetupCompleted":  true
+                               },
+                      "pinData":  {
+
+                                  },
+                      "versionId":  "5ac8d5e3-2265-47bf-993d-3e7083886906",
+                      "triggerCount":  1,
+                      "tags":  [
+
+                               ],
+                      "shared":  [
+                                     {
+                                         "createdAt":  "2025-12-01T03:42:27.669Z",
+                                         "updatedAt":  "2025-12-01T03:42:27.669Z",
+                                         "role":  "workflow:owner",
+                                         "workflowId":  "fYGr8BUvqSeDSQYr",
+                                         "projectId":  "oY6tO7SGZA0mI3T3",
+                                         "project":  {
+                                                         "createdAt":  "2025-12-01T03:39:10.415Z",
+                                                         "updatedAt":  "2025-12-01T03:39:54.218Z",
+                                                         "id":  "oY6tO7SGZA0mI3T3",
+                                                         "name":  "admin admin \u003cadmin@localhost.com\u003e",
+                                                         "type":  "personal",
+                                                         "icon":  null,
+                                                         "description":  null
+                                                     }
+                                     }
+                                 ]
+                  }
+              ],
+    "Count":  1
+}
