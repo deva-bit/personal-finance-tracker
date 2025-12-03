@@ -1,0 +1,294 @@
+{
+  "name": "Conversational Expense Tracker - DB State",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract message and phone\nfor (const item of $input.all()) {\n  const webhookData = item.json;\n  const webhookBody = webhookData.body || webhookData;\n  const message = (webhookBody.body?.data?.message?.conversation || webhookBody.data?.message?.conversation || '').trim();\n  const phone = webhookBody.body?.data?.key?.remoteJid || webhookBody.data?.key?.remoteJid;\n  \n  // Skip system messages and newsletters\n  if (phone && (phone.includes('status@broadcast') || phone.includes('@newsletter'))) {\n    return { message: '', messageLower: '', phone: phone, isSystem: true };\n  }\n  \n  // Skip bot's own messages (messages from self or that look like bot responses)\n  const messageLower = message.toLowerCase();\n  const isBotMessage = message.startsWith('📝') || message.startsWith('💰') || \n                       message.startsWith('📋') || message.startsWith('✅') || \n                       message.startsWith('❌') || message.startsWith('👋') ||\n                       message.includes('What category?') || \n                       message.includes('How much?') ||\n                       message.includes('Description?');\n  \n  if (isBotMessage) {\n    return { message: '', messageLower: '', phone: phone, isSystem: true };\n  }\n  \n  return {\n    message: message,\n    messageLower: messageLower,\n    phone: phone,\n    isSystem: false\n  };\n}"
+      },
+      "id": "extract-data",
+      "name": "Extract Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isSystem }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "filter-system",
+      "name": "Filter System Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: 'ok' } }}"
+      },
+      "id": "respond-system",
+      "name": "Respond System",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [800, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=CREATE TABLE IF NOT EXISTS conversation_state (\n  phone_number VARCHAR(50) PRIMARY KEY,\n  step VARCHAR(50),\n  category VARCHAR(100),\n  amount DECIMAL(10,2),\n  description VARCHAR(255),\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\nINSERT INTO conversation_state (phone_number, step)\nVALUES ('{{ $json.phone }}', 'idle')\nON CONFLICT (phone_number) DO NOTHING;\n\nSELECT * FROM conversation_state WHERE phone_number = '{{ $json.phone }}';"
+      },
+      "id": "get-state",
+      "name": "Get Conversation State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [820, 200],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const extractData = $node['Extract Data'].json;\nconst stateResult = $input.first().json;\n\nconst message = extractData.messageLower;\nconst phone = extractData.phone;\n\n// Handle if state is array or object\nconst state = Array.isArray(stateResult) ? stateResult[0] : stateResult;\n\nlet nextStep = state.step || 'idle';\nlet response = '';\nlet shouldSave = false;\nlet updateQuery = '';\nlet category = state.category;\nlet amount = state.amount;\nlet description = state.description;\n\nif (message === 'add expense' || message === 'add') {\n  nextStep = 'waiting_category';\n  response = '📝 What category?\\n\\nExamples: food, transport, bills, shopping, entertainment, health';\n  updateQuery = `UPDATE conversation_state SET step='waiting_category', category=NULL, amount=NULL, description=NULL WHERE phone_number='${phone}'`;\n  \n} else if (state.step === 'waiting_category') {\n  category = message;\n  nextStep = 'waiting_amount';\n  response = `💰 How much? (just enter the number)`;\n  updateQuery = `UPDATE conversation_state SET step='waiting_amount', category='${message}' WHERE phone_number='${phone}'`;\n  \n} else if (state.step === 'waiting_amount') {\n  const parsedAmount = parseFloat(message.replace(/,/g, ''));\n  if (isNaN(parsedAmount)) {\n    response = '❌ Invalid amount. Please enter a number (e.g., 25 or 150.50)';\n    updateQuery = '';\n  } else {\n    amount = parsedAmount;\n    nextStep = 'waiting_description';\n    response = `📋 Description? (e.g., lunch, taxi, groceries)`;\n    updateQuery = `UPDATE conversation_state SET step='waiting_description', amount=${parsedAmount} WHERE phone_number='${phone}'`;\n  }\n  \n} else if (state.step === 'waiting_description') {\n  description = message;\n  shouldSave = true;\n  response = '';\n  nextStep = 'idle';\n  updateQuery = `UPDATE conversation_state SET step='idle', description='${message}' WHERE phone_number='${phone}'`;\n  \n} else {\n  response = '👋 Hi! Send \"add expense\" to start tracking an expense.\\n\\nOr use quick format: expense description amount category\\nExample: expense lunch 25 food';\n  updateQuery = '';\n}\n\nreturn {\n  response: response,\n  shouldSave: shouldSave,\n  updateQuery: updateQuery,\n  category: category,\n  amount: amount,\n  description: description,\n  phone: phone\n};"
+      },
+      "id": "process-conversation",
+      "name": "Process Conversation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const processData = $node['Process Conversation'].json;\nif (processData.updateQuery && processData.updateQuery.trim() !== '') {\n  return processData;\n} else {\n  return { ...processData, skipUpdate: true };\n}"
+      },
+      "id": "check-update",
+      "name": "Check Update Needed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skipUpdate !== true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-update",
+      "name": "Has Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.updateQuery }}",
+        "options": {}
+      },
+      "id": "update-state",
+      "name": "Update State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1580, 100],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the original conversation data from before Update State\nconst checkData = $node['Check Update Needed'].json;\nreturn checkData;"
+      },
+      "id": "restore-data",
+      "name": "Restore Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Route based on shouldSave flag\nif ($json.shouldSave === true) {\n  // This will go to output 0 (Save path)\n  return { ...($json), routeTo: 'save' };\n} else {\n  // This will go to output 0, but we'll check routeTo in next nodes\n  return { ...($json), routeTo: 'question' };\n}"
+      },
+      "id": "check-save",
+      "name": "Should Save?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.routeTo }}",
+              "operation": "notEquals",
+              "value2": "save"
+            }
+          ]
+        }
+      },
+      "id": "route-check",
+      "name": "Route Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2060, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO expenses (amount, category, description, phone_number) \nVALUES ( \n  {{ $json.amount }}, \n  '{{ $json.category }}', \n  '{{ $json.description }}', \n  '{{ $json.phone }}' \n) \nRETURNING *;",
+        "options": {}
+      },
+      "id": "save-expense",
+      "name": "Save Expense",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2120, 100],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  COALESCE(SUM(amount), 0) as total,\n  COUNT(*) as count\nFROM expenses \nWHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)\n  AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)\n  AND phone_number = '{{ $json.phone }}'",
+        "options": {}
+      },
+      "id": "get-monthly",
+      "name": "Get Monthly Total",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2340, 100],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const expense = $node['Save Expense'].json;\nconst monthly = $node['Get Monthly Total'].json;\n\nreturn {\n  reply: `✅ Expense added!\\n💰 Amount: RM${expense.amount}\\n🏷️ Description: ${expense.description}\\n🗂️ Category: ${expense.category}\\n\\n📊 This Month Total:\\n💵 RM${monthly.total} (${monthly.count} expenses)`\n};"
+      },
+      "id": "format-saved",
+      "name": "Format Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2560, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { reply: $node['Process Conversation'].json.response };"
+      },
+      "id": "format-question",
+      "name": "Format Question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3000, 200]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Extract Data", "type": "main", "index": 0}]]
+    },
+    "Extract Data": {
+      "main": [[{"node": "Filter System Messages", "type": "main", "index": 0}]]
+    },
+    "Filter System Messages": {
+      "main": [
+        [{"node": "Get Conversation State", "type": "main", "index": 0}],
+        [{"node": "Respond System", "type": "main", "index": 0}]
+      ]
+    },
+    "Get Conversation State": {
+      "main": [[{"node": "Process Conversation", "type": "main", "index": 0}]]
+    },
+    "Process Conversation": {
+      "main": [[{"node": "Check Update Needed", "type": "main", "index": 0}]]
+    },
+    "Check Update Needed": {
+      "main": [[{"node": "Has Update?", "type": "main", "index": 0}]]
+    },
+    "Has Update?": {
+      "main": [
+        [{"node": "Update State", "type": "main", "index": 0}],
+        [{"node": "Should Save?", "type": "main", "index": 0}]
+      ]
+    },
+    "Update State": {
+      "main": [[{"node": "Restore Data", "type": "main", "index": 0}]]
+    },
+    "Restore Data": {
+      "main": [[{"node": "Should Save?", "type": "main", "index": 0}]]
+    },
+    "Should Save?": {
+      "main": [[{"node": "Route Check", "type": "main", "index": 0}]]
+    },
+    "Route Check": {
+      "main": [
+        [{"node": "Format Question", "type": "main", "index": 0}],
+        [{"node": "Save Expense", "type": "main", "index": 0}]
+      ]
+    },
+    "Save Expense": {
+      "main": [[{"node": "Get Monthly Total", "type": "main", "index": 0}]]
+    },
+    "Get Monthly Total": {
+      "main": [[{"node": "Format Success", "type": "main", "index": 0}]]
+    },
+    "Format Success": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    },
+    "Format Question": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": {},
+  "tags": []
+}
+

@@ -17,21 +17,35 @@ const dbConfig = {
   password: 'n8n123'
 };
 
-// API endpoint to get expenses
+// Root endpoint
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// Monthly expenses endpoint with date filter
 app.get('/api/expenses/monthly', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    
+
+    const phone = req.query.phone;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number required' });
+    }
+
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
     const result = await client.query(`
-      SELECT 
+      SELECT
         SUM(amount) as total,
         COUNT(*) as count
       FROM expenses
-      WHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
-    `);
-    
+      WHERE EXTRACT(MONTH FROM date) = $1
+        AND EXTRACT(YEAR FROM date) = $2
+        AND phone_number = $3
+    `, [month, year, phone]);
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -40,19 +54,26 @@ app.get('/api/expenses/monthly', async (req, res) => {
   }
 });
 
+// Weekly expenses endpoint
 app.get('/api/expenses/weekly', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    
+
+    const phone = req.query.phone;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number required' });
+    }
+
     const result = await client.query(`
-      SELECT 
+      SELECT
         SUM(amount) as total,
         COUNT(*) as count
       FROM expenses
       WHERE date >= CURRENT_DATE - INTERVAL '7 days'
-    `);
-    
+        AND phone_number = $1
+    `, [phone]);
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -61,23 +82,33 @@ app.get('/api/expenses/weekly', async (req, res) => {
   }
 });
 
+// Expenses by category endpoint with date filter
 app.get('/api/expenses/by-category', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    
+
+    const phone = req.query.phone;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number required' });
+    }
+
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
     const result = await client.query(`
-      SELECT 
+      SELECT
         category,
         COUNT(*) as count,
         SUM(amount) as total
       FROM expenses
-      WHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
+      WHERE EXTRACT(MONTH FROM date) = $1
+        AND EXTRACT(YEAR FROM date) = $2
+        AND phone_number = $3
       GROUP BY category
       ORDER BY total DESC
-    `);
-    
+    `, [month, year, phone]);
+
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -86,26 +117,67 @@ app.get('/api/expenses/by-category', async (req, res) => {
   }
 });
 
+// Recent expenses endpoint with date filter
 app.get('/api/expenses/recent', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    
+
+    const phone = req.query.phone;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number required' });
+    }
+
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
     const result = await client.query(`
-      SELECT 
-        TO_CHAR(date, 'DD/MM/YYYY') as date,
+      SELECT id, TO_CHAR(date, 'DD/MM/YYYY') as date,
         description,
         category,
         amount,
         TO_CHAR(created_at, 'DD/MM HH24:MI') as added_on
       FROM expenses
+      WHERE EXTRACT(MONTH FROM date) = $1
+        AND EXTRACT(YEAR FROM date) = $2
+        AND phone_number = $3
       ORDER BY created_at DESC
       LIMIT 20
-    `);
-    
+    `, [month, year, phone]);
+
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    await client.end();
+  }
+});
+
+// Delete expense endpoint
+app.delete('/api/expenses/:id', async (req, res) => {
+  const phone = req.query.phone;
+  const expenseId = req.params.id;
+
+  if (!phone) {
+    return res.status(400).json({ error: 'Phone number required' });
+  }
+
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const result = await client.query(
+      'DELETE FROM expenses WHERE id = $1 AND phone_number = $2 RETURNING *',
+      [expenseId, phone]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Expense not found' });
+    }
+    
+    res.json({ success: true, deleted: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting expense:', error);
+    res.status(500).json({ error: 'Database error' });
   } finally {
     await client.end();
   }
@@ -113,5 +185,5 @@ app.get('/api/expenses/recent', async (req, res) => {
 
 const PORT = 8080;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Dashboard server running on http://localhost:${PORT}`);
+  console.log(`Dashboard server running on port ${PORT}`);
 });

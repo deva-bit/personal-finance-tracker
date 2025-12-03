@@ -1,0 +1,108 @@
+{
+  "name": "Enhanced Expense Tracker with Monthly Total",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO expenses (amount, category, description, phone_number) \nVALUES ( \n  {{ $('Webhook').first().json.body.data.message.conversation.split(' ')[2].replace(/,/g, '') }}, \n  '{{ $('Webhook').first().json.body.data.message.conversation.split(' ')[3] || \"general\" }}', \n  '{{ $('Webhook').first().json.body.data.message.conversation.split(' ')[1] }}', \n  '{{ $('Webhook').first().json.body.data.key.remoteJid }}' \n) \nRETURNING *;",
+        "options": {}
+      },
+      "id": "save-db-node",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [460, 300],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  SUM(amount) as total,\n  COUNT(*) as count\nFROM expenses \nWHERE EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)\n  AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)\n  AND phone_number = '{{ $('Webhook').first().json.body.data.key.remoteJid }}'",
+        "options": {}
+      },
+      "id": "monthly-total-node",
+      "name": "Get Monthly Total",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "bTGkR7pFa0wl9Xpa",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"reply\": \"✅ Expense added!\\n💰 Amount: RM\" + $('Save to Database').first().json.amount + \"\\n🏷️ Description: \" + $('Save to Database').first().json.description + \"\\n🗂️ Category: \" + $('Save to Database').first().json.category + \"\\n\\n📊 This Month Total:\\n💵 RM\" + $('Get Monthly Total').first().json.total + \" (\" + $('Get Monthly Total').first().json.count + \" expenses)\"\n}",
+        "options": {}
+      },
+      "id": "respond-node",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Get Monthly Total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Monthly Total": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

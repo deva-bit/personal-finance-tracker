@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+</head>
+<body>
+    <h1>Server is working!</h1>
+    <div id="result"></div>
+    <script>
+        fetch('/api/status')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('result').innerHTML = 
+                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            })
+            .catch(err => {
+                document.getElementById('result').innerHTML = 
+                    '<p style="color:red">Error: ' + err.message + '</p>';
+            });
+    </script>
+</body>
+</html>
