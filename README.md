@@ -30,14 +30,19 @@ WhatsApp → WhatsApp Bot → n8n Workflow → PostgreSQL
 ### 1. Clone Repository
 
 ```bash
-git clone <your-repo-url>
-cd expense-tracker-whatsapp
+git clone https://github.com/deva-bit/personal-finance-tracker.git
+cd personal-finance-tracker
 ```
 
 ### 2. Start All Services
 
 ```bash
-docker-compose up -d
+# First time - build and start
+docker-compose up -d --build
+
+# If you get cache errors, run:
+docker system prune -f
+docker-compose up -d --build
 ```
 
 This starts 4 services:
@@ -58,7 +63,7 @@ docker logs whatsapp-bot
 ### 4. Import n8n Workflow
 
 1. Open http://localhost:5678
-2. Login with email: `admin@localhost.com` (any password on first run)
+2. Login with: `admin` / `admin123`
 3. Click **Workflows** → **Import from File**
 4. Upload: `expense-tracker-workflow.json`
 5. **Activate** the workflow
@@ -131,21 +136,21 @@ docker-compose up -d --build
 ## 📁 Project Structure
 
 ```
-expense-tracker-whatsapp/
+personal-finance-tracker/
 ├── docker-compose.yml              # Services configuration
 ├── setup-database.sql              # Database schema
-├── export-to-excel.ps1            # Excel export script
+├── export-to-excel.ps1             # Excel export script
+├── expense-tracker-workflow.json   # Import this to n8n
 ├── whatsapp-bot/
 │   ├── Dockerfile
 │   ├── package.json
 │   └── index.js
-├── dashboard-server/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── index.js
-│   └── public/
-│       └── index.html
-└── expense-tracker-workflow.json  # Import this to n8n
+└── dashboard-server/
+    ├── Dockerfile
+    ├── package.json
+    ├── index.js
+    └── public/
+        └── dashboard.html
 ```
 
 ## 🐛 Troubleshooting
