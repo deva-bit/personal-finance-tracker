@@ -401,14 +401,15 @@
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const phoneNumber = urlParams.get('phone');
+        const accessToken = urlParams.get('token');
         const API = window.location.origin + '/api';
         
         let selectedMonth = new Date().getMonth() + 1;
         let selectedYear = new Date().getFullYear();
+        let sessionToken = null; // Will be set after PIN verification
         
         // Check access
-        if (!phoneNumber) {
+        if (!accessToken) {
             document.getElementById('pinScreen').innerHTML = `
                 <div class="pin-box">
                     <h1>❌ Access Denied</h1>
@@ -423,10 +424,18 @@
         // Check if user has PIN set
         async function checkPinStatus() {
             try {
-                const response = await fetch(`${API}/has-pin?phone=${phoneNumber}`);
+                const response = await fetch(`${API}/has-pin?token=${accessToken}`);
                 const data = await response.json();
                 
-                if (!data.hasPin) {
+                if (data.error) {
+                    document.getElementById('pinScreen').innerHTML = `
+                        <div class="pin-box">
+                            <h1>⏰ Link Expired</h1>
+                            <p>This link has expired for your security.</p>
+                            <p class="pin-hint">Send <code>dashboard</code> on WhatsApp to get a new link.</p>
+                        </div>
+                    `;
+                } else if (!data.hasPin) {
                     document.getElementById('pinScreen').style.display = 'none';
                     document.getElementById('noPinScreen').style.display = 'flex';
                 }
@@ -462,15 +471,26 @@
                 const response = await fetch(`${API}/verify-pin`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: phoneNumber, pin })
+                    body: JSON.stringify({ token: accessToken, pin })
                 });
                 const data = await response.json();
                 
                 if (data.valid) {
+                    sessionToken = data.sessionToken; // Store session for API calls
                     document.getElementById('pinScreen').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
                     initializeDashboard();
                 } else {
+                    if (data.error && data.error.includes('expired')) {
+                        document.getElementById('pinScreen').innerHTML = `
+                            <div class="pin-box">
+                                <h1>⏰ Link Expired</h1>
+                                <p>This link has expired for your security.</p>
+                                <p class="pin-hint">Send <code>dashboard</code> on WhatsApp to get a new link.</p>
+                            </div>
+                        `;
+                        return;
+                    }
                     document.getElementById('pinError').style.display = 'block';
                     document.querySelectorAll('.pin-input input').forEach(input => {
                         input.value = '';
@@ -518,11 +538,12 @@
                 selectedMonth = parseInt(document.getElementById('monthSelect').value);
                 selectedYear = parseInt(document.getElementById('yearSelect').value);
                 
+                const token = sessionToken || accessToken;
                 const [monthly, weekly, categories, recent] = await Promise.all([
-                    fetch(`${API}/expenses/monthly?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
-                    fetch(`${API}/expenses/weekly?phone=${phoneNumber}`).then(r => r.json()),
-                    fetch(`${API}/expenses/by-category?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
-                    fetch(`${API}/expenses/recent?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json())
+                    fetch(`${API}/expenses/monthly?token=${token}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
+                    fetch(`${API}/expenses/weekly?token=${token}`).then(r => r.json()),
+                    fetch(`${API}/expenses/by-category?token=${token}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
+                    fetch(`${API}/expenses/recent?token=${token}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json())
                 ]);
 
                 displayData({ monthly, weekly, categories, recent });
@@ -598,10 +619,11 @@
             }
             
             try {
+                const token = sessionToken || accessToken;
                 const response = await fetch(`${API}/expenses/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: phoneNumber, description, amount, category })
+                    body: JSON.stringify({ token, description, amount, category })
                 });
                 
                 if (response.ok) {
@@ -623,7 +645,8 @@
         // Export CSV
         async function exportCSV() {
             try {
-                const response = await fetch(`${API}/expenses/export?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`);
+                const token = sessionToken || accessToken;
+                const response = await fetch(`${API}/expenses/export?token=${token}&month=${selectedMonth}&year=${selectedYear}`);
                 
                 if (!response.ok) {
                     alert('Failed to export data');

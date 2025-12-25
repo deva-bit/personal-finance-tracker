@@ -9,10 +9,21 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// In-memory token storage (tokens expire in 10 minutes)
+const accessTokens = new Map();
+
 // Hash PIN for security (must match whatsapp-bot)
 function hashPin(pin) {
     return crypto.createHash('sha256').update(pin).digest('hex').substring(0, 16);
 }
+
+// Generate secure access token
+function generateToken() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+// Session storage (phone -> session token after PIN verified)
+const sessions = new Map();
 
 // Database connection - supports both local Docker and cloud (Neon)
 const dbConfig = process.env.DATABASE_URL 
@@ -25,13 +36,53 @@ const dbConfig = process.env.DATABASE_URL
       password: process.env.DB_PASSWORD || 'n8n123'
     };
 
-// Root endpoint - redirect to dashboard
+// Create access token endpoint (called by WhatsApp bot)
+app.post('/api/create-access-token', async (req, res) => {
+    const { phone, secret } = req.body;
+    
+    // Verify shared secret
+    if (secret !== (process.env.SHARED_SECRET || 'expense-tracker-2024')) {
+        return res.status(403).json({ error: 'Invalid secret' });
+    }
+    
+    const token = generateToken();
+    const expiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+    
+    accessTokens.set(token, { phone, expiry });
+    
+    // Clean up expired tokens
+    for (const [t, data] of accessTokens.entries()) {
+        if (data.expiry < Date.now()) accessTokens.delete(t);
+    }
+    
+    res.json({ token });
+});
+
+// Root endpoint - handle token-based access
 app.get('/', (req, res) => {
-  if (req.query.phone) {
-    // If phone provided, redirect to dashboard
-    res.redirect(`/dashboard.html?phone=${req.query.phone}`);
+  const token = req.query.token;
+  
+  if (token) {
+    // Validate token and redirect to dashboard
+    const tokenData = accessTokens.get(token);
+    if (tokenData && tokenData.expiry > Date.now()) {
+      res.redirect(`/dashboard.html?token=${token}`);
+    } else {
+      res.status(403).send(`
+        <html>
+          <head><title>Link Expired</title></head>
+          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: linear-gradient(135deg, #667eea, #764ba2); margin: 0;">
+            <div style="background: white; padding: 40px; border-radius: 16px; text-align: center; max-width: 400px;">
+              <h1 style="color: #f59e0b;">⏰ Link Expired</h1>
+              <p style="color: #666; margin-top: 15px;">This dashboard link has expired for security.</p>
+              <p style="color: #888; margin-top: 20px; font-size: 14px;">Send <code style="background: #f3f4f6; padding: 3px 8px; border-radius: 4px;">dashboard</code> on WhatsApp to get a new link.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    }
   } else {
-    // No login page - access only via WhatsApp bot link
+    // No token - access denied
     res.status(403).send(`
       <html>
         <head><title>Access Denied</title></head>
@@ -47,15 +98,35 @@ app.get('/', (req, res) => {
   }
 });
 
+// Get phone from token (internal helper)
+function getPhoneFromToken(token) {
+    const tokenData = accessTokens.get(token);
+    if (tokenData && tokenData.expiry > Date.now()) {
+        return tokenData.phone;
+    }
+    // Check sessions
+    const sessionData = sessions.get(token);
+    if (sessionData && sessionData.expiry > Date.now()) {
+        return sessionData.phone;
+    }
+    return null;
+}
+
 // PIN verification endpoint
 app.post('/api/verify-pin', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    const { phone, pin } = req.body;
+    const { token, pin } = req.body;
     
-    if (!phone || !pin) {
-      return res.status(400).json({ error: 'Phone and PIN required' });
+    // Get phone from access token
+    const phone = getPhoneFromToken(token);
+    if (!phone) {
+      return res.status(403).json({ valid: false, error: 'Invalid or expired token' });
+    }
+    
+    if (!pin) {
+      return res.status(400).json({ error: 'PIN required' });
     }
     
     // Hash the provided PIN and compare
@@ -71,7 +142,21 @@ app.post('/api/verify-pin', async (req, res) => {
     }
     
     const valid = result.rows[0].pin === hashedPin;
-    res.json({ valid });
+    
+    if (valid) {
+      // Create a long-lived session token (1 hour)
+      const sessionToken = generateToken();
+      sessions.set(sessionToken, { phone, expiry: Date.now() + 60 * 60 * 1000 });
+      
+      // Clean old sessions
+      for (const [t, data] of sessions.entries()) {
+          if (data.expiry < Date.now()) sessions.delete(t);
+      }
+      
+      res.json({ valid: true, sessionToken });
+    } else {
+      res.json({ valid: false });
+    }
   } catch (error) {
     console.error('PIN verification error:', error);
     res.status(500).json({ error: 'Database error' });
@@ -85,10 +170,11 @@ app.get('/api/has-pin', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    const phone = req.query.phone;
+    const token = req.query.token;
+    const phone = getPhoneFromToken(token);
     
     if (!phone) {
-      return res.status(400).json({ error: 'Phone required' });
+      return res.status(403).json({ error: 'Invalid token' });
     }
     
     const result = await client.query(
@@ -104,16 +190,23 @@ app.get('/api/has-pin', async (req, res) => {
   }
 });
 
+// Middleware to get phone from session or token
+function getPhone(req) {
+    const token = req.query.token || req.query.session || req.body.token || req.body.session;
+    return getPhoneFromToken(token);
+}
+
 // Update expense endpoint
 app.put('/api/expenses/:id', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    const { phone, description, amount, category } = req.body;
+    const { description, amount, category } = req.body;
+    const phone = getPhone(req);
     const expenseId = req.params.id;
     
     if (!phone) {
-      return res.status(400).json({ error: 'Phone required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
     
     const result = await client.query(
@@ -143,9 +236,9 @@ app.get('/api/expenses/monthly', async (req, res) => {
   try {
     await client.connect();
 
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     if (!phone) {
-      return res.status(400).json({ error: 'Phone number required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
 
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -175,9 +268,9 @@ app.get('/api/expenses/weekly', async (req, res) => {
   try {
     await client.connect();
 
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     if (!phone) {
-      return res.status(400).json({ error: 'Phone number required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
 
     const result = await client.query(`
@@ -203,9 +296,9 @@ app.get('/api/expenses/by-category', async (req, res) => {
   try {
     await client.connect();
 
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     if (!phone) {
-      return res.status(400).json({ error: 'Phone number required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
 
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -238,9 +331,9 @@ app.get('/api/expenses/recent', async (req, res) => {
   try {
     await client.connect();
 
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     if (!phone) {
-      return res.status(400).json({ error: 'Phone number required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
 
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -303,12 +396,12 @@ app.get('/api/expenses/export', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year) || new Date().getFullYear();
     
     if (!phone) {
-      return res.status(400).json({ error: 'Phone required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
     
     const result = await client.query(`
@@ -345,10 +438,10 @@ app.get('/api/budget', async (req, res) => {
   const client = new Client(dbConfig);
   try {
     await client.connect();
-    const phone = req.query.phone;
+    const phone = getPhone(req);
     
     if (!phone) {
-      return res.status(400).json({ error: 'Phone required' });
+      return res.status(403).json({ error: 'Invalid session' });
     }
     
     const budgetResult = await client.query(

@@ -40,6 +40,25 @@ const client = new Client({
 
 // Configuration
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8080';
+const SHARED_SECRET = process.env.SHARED_SECRET || 'expense-tracker-2024';
+
+// Function to get dashboard access token
+async function getDashboardToken(phoneNumber) {
+    try {
+        const response = await fetch(`${DASHBOARD_URL}/api/create-access-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phoneNumber, secret: SHARED_SECRET })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            return data.token;
+        }
+    } catch (error) {
+        console.error('Error getting dashboard token:', error);
+    }
+    return null;
+}
 
 // Database connection - supports Neon (cloud) or local Docker
 const dbConfig = process.env.DATABASE_URL 
@@ -642,7 +661,11 @@ async function handleMessage(messageBody, phoneNumber) {
                 if (!hasPin) {
                     return `⚠️ Please set a PIN first for dashboard security!\n\nSend: pin 1234\n(Use any 4 digits you'll remember)`;
                 }
-                return `🔗 Your Dashboard:\n${DASHBOARD_URL}/dashboard.html?phone=${phoneNumber}\n\n🔒 You'll need your PIN to access it.`;
+                const token = await getDashboardToken(phoneNumber);
+                if (token) {
+                    return `🔗 Your Dashboard:\n${DASHBOARD_URL}?token=${token}\n\n🔒 You'll need your PIN to access it.\n⏰ Link expires in 10 minutes for security.`;
+                }
+                return `❌ Error generating dashboard link. Please try again.`;
             
             case 'setpin':
                 await setUserPin(phoneNumber, parsed.pin);
