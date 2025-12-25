@@ -2,11 +2,17 @@ const express = require('express');
 const { Client } = require('pg');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Hash PIN for security (must match whatsapp-bot)
+function hashPin(pin) {
+    return crypto.createHash('sha256').update(pin).digest('hex').substring(0, 16);
+}
 
 // Database connection - supports both local Docker and cloud (Neon)
 const dbConfig = process.env.DATABASE_URL 
@@ -52,6 +58,9 @@ app.post('/api/verify-pin', async (req, res) => {
       return res.status(400).json({ error: 'Phone and PIN required' });
     }
     
+    // Hash the provided PIN and compare
+    const hashedPin = hashPin(pin);
+    
     const result = await client.query(
       'SELECT pin FROM users WHERE phone_number = $1',
       [phone]
@@ -61,7 +70,7 @@ app.post('/api/verify-pin', async (req, res) => {
       return res.json({ valid: false, error: 'No PIN set. Please set one via WhatsApp: pin 1234' });
     }
     
-    const valid = result.rows[0].pin === pin;
+    const valid = result.rows[0].pin === hashedPin;
     res.json({ valid });
   } catch (error) {
     console.error('PIN verification error:', error);
@@ -284,6 +293,86 @@ app.delete('/api/expenses/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting expense:', error);
     res.status(500).json({ error: 'Database error' });
+  } finally {
+    await client.end();
+  }
+});
+
+// Export to CSV endpoint
+app.get('/api/expenses/export', async (req, res) => {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const phone = req.query.phone;
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone required' });
+    }
+    
+    const result = await client.query(`
+      SELECT TO_CHAR(date, 'YYYY-MM-DD') as date, description, category, amount
+      FROM expenses 
+      WHERE phone_number = $1 
+      AND EXTRACT(MONTH FROM date) = $2
+      AND EXTRACT(YEAR FROM date) = $3
+      ORDER BY date
+    `, [phone, month, year]);
+    
+    // Generate CSV
+    let csv = 'Date,Description,Category,Amount\n';
+    let total = 0;
+    result.rows.forEach(row => {
+      csv += `${row.date},"${row.description}",${row.category},${row.amount}\n`;
+      total += parseFloat(row.amount);
+    });
+    csv += `\nTOTAL,,,${total.toFixed(2)}`;
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=expenses-${year}-${month}.csv`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ error: 'Database error' });
+  } finally {
+    await client.end();
+  }
+});
+
+// Budget status endpoint
+app.get('/api/budget', async (req, res) => {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const phone = req.query.phone;
+    
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone required' });
+    }
+    
+    const budgetResult = await client.query(
+      'SELECT monthly_budget FROM users WHERE phone_number = $1',
+      [phone]
+    );
+    const budget = parseFloat(budgetResult.rows[0]?.monthly_budget || 0);
+    
+    const spentResult = await client.query(`
+      SELECT COALESCE(SUM(amount), 0) as spent FROM expenses 
+      WHERE phone_number = $1 
+      AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM NOW())
+      AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM NOW())
+    `, [phone]);
+    const spent = parseFloat(spentResult.rows[0].spent);
+    
+    res.json({
+      budget,
+      spent,
+      remaining: budget - spent,
+      percentage: budget > 0 ? (spent / budget * 100) : 0
+    });
+  } catch (error) {
+    res.json({ budget: 0, spent: 0, remaining: 0, percentage: 0 });
   } finally {
     await client.end();
   }

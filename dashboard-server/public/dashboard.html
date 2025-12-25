@@ -332,6 +332,18 @@
                     <div class="amount" id="weeklyTotal">$0.00</div>
                     <div class="subtitle" id="weeklyCount">0 expenses</div>
                 </div>
+                <div class="card" id="budgetCard" style="display:none;">
+                    <h2>💼 Budget</h2>
+                    <div class="amount" id="budgetRemaining">$0.00</div>
+                    <div class="subtitle" id="budgetInfo">remaining</div>
+                    <div style="margin-top:10px;background:#e2e8f0;border-radius:8px;height:8px;overflow:hidden;">
+                        <div id="budgetBar" style="height:100%;background:#667eea;width:0%;transition:width 0.5s;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+                <button class="header-btn" onclick="exportCSV()" style="background:#10b981;">📥 Export CSV</button>
             </div>
             
             <div class="table-card">
@@ -607,6 +619,31 @@
         document.getElementById('editModal').addEventListener('click', (e) => {
             if (e.target.id === 'editModal') closeModal();
         });
+        
+        // Export CSV
+        async function exportCSV() {
+            try {
+                const response = await fetch(`${API}/expenses/export?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`);
+                
+                if (!response.ok) {
+                    alert('Failed to export data');
+                    return;
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `expenses-${selectedYear}-${String(selectedMonth).padStart(2, '0')}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting data');
+            }
+        }
     </script>
 </body>
 </html>
