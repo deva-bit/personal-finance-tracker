@@ -18,4 +18,4 @@ RUN npm install
 
 COPY . .
 
-CMD ["node", "index.js"]
+CMD ["node", "index-standalone.js"]
