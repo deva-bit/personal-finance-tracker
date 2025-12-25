@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install Chromium and dependencies
+# Install Chromium and dependencies for WhatsApp Web
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -27,10 +27,13 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /app
 
-# Copy from girlfriend-bot folder (when built from repo root)
+# Copy package files first
 COPY girlfriend-bot/package*.json ./
+
+# Install dependencies
 RUN npm install
 
+# Copy rest of the code
 COPY girlfriend-bot/ .
 
 CMD ["node", "index-standalone.js"]
