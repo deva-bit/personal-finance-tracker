@@ -135,7 +135,7 @@
                     statusDiv.textContent = '✅ Connected! WhatsApp is ready';
                     qrcodeDiv.innerHTML = '<p style="color: #28a745; font-size: 24px;">✓ Successfully Connected</p>';
                     
-                    const link = `http://localhost:8080?phone=${data.phoneNumber}`;
+                    const link = `${data.dashboardUrl || 'http://localhost:8080'}?phone=${data.phoneNumber}`;
                     dashboardUrl.href = link;
                     dashboardUrl.textContent = link;
                     dashboardDiv.style.display = 'block';

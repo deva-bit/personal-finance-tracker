@@ -8,14 +8,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Database connection
-const dbConfig = {
-  host: 'postgres',
-  port: 5432,
-  database: 'n8n',
-  user: 'n8n',
-  password: 'n8n123'
-};
+// Database connection - supports both local Docker and cloud (Neon)
+const dbConfig = process.env.DATABASE_URL 
+  ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+  : {
+      host: process.env.DB_HOST || 'postgres',
+      port: process.env.DB_PORT || 5432,
+      database: process.env.DB_NAME || 'n8n',
+      user: process.env.DB_USER || 'n8n',
+      password: process.env.DB_PASSWORD || 'n8n123'
+    };
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -183,7 +185,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
   }
 });
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Dashboard server running on port ${PORT}`);
 });

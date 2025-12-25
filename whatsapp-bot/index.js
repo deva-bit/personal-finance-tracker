@@ -14,6 +14,7 @@ const client = new Client({
 });
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://n8n:5678/webhook/whatsapp-webhook';
+const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8080';
 
 // Store QR code and status
 let currentQR = null;
@@ -51,7 +52,7 @@ client.on('ready', async () => {
     const info = await client.info;
     const phoneNumber = info.wid.user;
     connectedPhone = phoneNumber;
-    const dashboardLink = `http://localhost:8080?phone=${phoneNumber}`;
+    const dashboardLink = `${DASHBOARD_URL}?phone=${phoneNumber}`;
     
     console.log('\n🔗 Your Personal Dashboard Link:');
     console.log(dashboardLink);
@@ -135,7 +136,8 @@ app.get('/api/status', (req, res) => {
     res.json({
         status: currentStatus,
         qr: currentQR,
-        phoneNumber: connectedPhone
+        phoneNumber: connectedPhone,
+        dashboardUrl: DASHBOARD_URL
     });
 });
 

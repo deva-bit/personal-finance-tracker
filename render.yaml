@@ -1,0 +1,27 @@
+services:
+  # Dashboard Server
+  - type: web
+    name: expense-dashboard
+    runtime: node
+    rootDir: dashboard-server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # You'll set this manually in Render dashboard
+      - key: NODE_ENV
+        value: production
+
+  # WhatsApp Bot
+  - type: web
+    name: whatsapp-bot
+    runtime: docker
+    rootDir: whatsapp-bot
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: N8N_WEBHOOK_URL
+        sync: false  # You'll set this to your n8n.cloud webhook URL
+      - key: DASHBOARD_URL
+        sync: false  # Set to your dashboard URL, e.g., https://expense-dashboard.onrender.com
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"
