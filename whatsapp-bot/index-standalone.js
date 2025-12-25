@@ -349,6 +349,12 @@ async function getBudgetStatus(phoneNumber) {
     const pgClient = new PgClient(dbConfig);
     try {
         await pgClient.connect();
+        
+        // Ensure monthly_budget column exists
+        await pgClient.query(`
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget DECIMAL(10,2) DEFAULT 0
+        `).catch(() => {});
+        
         const budgetResult = await pgClient.query(
             `SELECT monthly_budget FROM users WHERE phone_number = $1`,
             [phoneNumber]
@@ -365,6 +371,9 @@ async function getBudgetStatus(phoneNumber) {
         const spent = parseFloat(spentResult.rows[0].spent);
         
         return { budget, spent, remaining: budget - spent, percentage: budget > 0 ? (spent / budget * 100) : 0 };
+    } catch (error) {
+        console.error('Budget status error:', error.message);
+        return { budget: 0, spent: 0, remaining: 0, percentage: 0 };
     } finally {
         await pgClient.end();
     }
