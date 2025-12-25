@@ -147,10 +147,13 @@ async function getTodayTotal(phoneNumber) {
             `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
              FROM expenses 
              WHERE phone_number = $1 
-             AND DATE(date) = CURRENT_DATE`,
+             AND DATE(date AT TIME ZONE 'Asia/Singapore') = DATE(NOW() AT TIME ZONE 'Asia/Singapore')`,
             [phoneNumber]
         );
         return result.rows[0];
+    } catch (error) {
+        console.error('getTodayTotal error:', error.message);
+        return { total: 0, count: 0 };
     } finally {
         await pgClient.end();
     }
@@ -822,8 +825,9 @@ async function handleMessage(messageBody, phoneNumber) {
                 return null; // Don't reply to unknown messages
         }
     } catch (error) {
-        console.error('Error handling message:', error);
-        return '❌ Sorry, something went wrong. Please try again.';
+        console.error('Error handling message:', error.message);
+        console.error('Error stack:', error.stack);
+        return `❌ Sorry, something went wrong: ${error.message}`;
     }
 }
 
