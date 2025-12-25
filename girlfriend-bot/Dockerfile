@@ -1,7 +1,5 @@
 FROM node:18-slim
 
-WORKDIR /app
-
 # Install Chromium and dependencies
 RUN apt-get update && apt-get install -y \
     chromium \
@@ -29,9 +27,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy from girlfriend-bot folder (when built from repo root)
+COPY girlfriend-bot/package*.json ./
 RUN npm install
 
-COPY . .
+COPY girlfriend-bot/ .
 
 CMD ["node", "index-standalone.js"]
