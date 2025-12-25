@@ -1,5 +1,10 @@
 FROM node:18-slim
 
+WORKDIR /app
+
+# Copy package files FIRST (before anything else)
+COPY girlfriend-bot/package*.json ./
+
 # Install Chromium and dependencies for WhatsApp Web
 RUN apt-get update && apt-get install -y \
     chromium \
@@ -24,11 +29,6 @@ RUN apt-get update && apt-get install -y \
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-WORKDIR /app
-
-# Copy package files first
-COPY girlfriend-bot/package*.json ./
 
 # Install dependencies
 RUN npm install
