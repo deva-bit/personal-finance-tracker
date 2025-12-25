@@ -10,6 +10,18 @@ const axios = require('axios');
 // Valid categories - for validation
 const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'entertainment', 'health', 'subscription', 'other'];
 
+// Singapore timezone helper
+function getSingaporeTime() {
+    return new Date().toLocaleString('en-SG', { 
+        timeZone: 'Asia/Singapore',
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
 // Hash PIN for security
 function hashPin(pin) {
     return crypto.createHash('sha256').update(pin).digest('hex').substring(0, 16);
@@ -83,7 +95,7 @@ async function addExpense(phoneNumber, description, amount, category) {
         await pgClient.connect();
         const result = await pgClient.query(
             `INSERT INTO expenses (phone_number, description, amount, category, date, created_at) 
-             VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING *`,
+             VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'Asia/Singapore', NOW() AT TIME ZONE 'Asia/Singapore') RETURNING *`,
             [phoneNumber, description, amount, category]
         );
         return result.rows[0];
@@ -627,7 +639,8 @@ async function handleMessage(messageBody, phoneNumber) {
                     categoryNote = `\n(Changed "${parsed.category}" → "${validCategory}")`;
                 }
                 
-                return `✅ Added: ${parsed.description}\n💰 Amount: $${parsed.amount}\n📁 Category: ${validCategory}${categoryNote}\n\n📊 Today's total: $${parseFloat(todayData.total).toFixed(2)}${budgetAlert}`;
+                const sgtTime = getSingaporeTime();
+                return `✅ Added: ${parsed.description}\n💰 Amount: $${parsed.amount}\n📁 Category: ${validCategory}\n🕐 Time: ${sgtTime}${categoryNote}\n\n📊 Today's total: $${parseFloat(todayData.total).toFixed(2)}${budgetAlert}`;
             
             case 'monthly':
                 const monthly = await getMonthlyTotal(phoneNumber);
