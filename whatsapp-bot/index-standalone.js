@@ -10,6 +10,63 @@ const axios = require('axios');
 // Valid categories - for validation
 const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'entertainment', 'health', 'subscription', 'other'];
 
+// Auto-categorization for common Singapore items
+const AUTO_CATEGORIES = {
+    // Food & Drinks
+    'coffee': 'food', 'kopi': 'food', 'teh': 'food', 'lunch': 'food', 'dinner': 'food', 
+    'breakfast': 'food', 'brunch': 'food', 'supper': 'food', 'snack': 'food', 'bubble tea': 'food',
+    'bbt': 'food', 'makan': 'food', 'food': 'food', 'eat': 'food', 'meal': 'food',
+    'hawker': 'food', 'kopitiam': 'food', 'foodcourt': 'food', 'restaurant': 'food',
+    'mcdonalds': 'food', 'mcd': 'food', 'kfc': 'food', 'subway': 'food', 'starbucks': 'food',
+    'toast box': 'food', 'ya kun': 'food', 'liho': 'food', 'gongcha': 'food', 'each a cup': 'food',
+    
+    // Transport
+    'grab': 'transport', 'gojek': 'transport', 'uber': 'transport', 'taxi': 'transport',
+    'mrt': 'transport', 'bus': 'transport', 'train': 'transport', 'ez-link': 'transport',
+    'ezlink': 'transport', 'petrol': 'transport', 'fuel': 'transport', 'parking': 'transport',
+    'carpark': 'transport', 'cabby': 'transport', 'comfort': 'transport',
+    
+    // Shopping
+    'ntuc': 'shopping', 'fairprice': 'shopping', 'cold storage': 'shopping', 'giant': 'shopping',
+    'sheng siong': 'shopping', 'shopee': 'shopping', 'lazada': 'shopping', 'amazon': 'shopping',
+    'uniqlo': 'shopping', 'zara': 'shopping', 'h&m': 'shopping', 'daiso': 'shopping',
+    'miniso': 'shopping', 'don don': 'shopping', 'donki': 'shopping', 'watsons': 'shopping',
+    'guardian': 'shopping', 'clothes': 'shopping', 'shoes': 'shopping',
+    
+    // Bills & Utilities
+    'electric': 'bills', 'electricity': 'bills', 'water': 'bills', 'gas': 'bills',
+    'phone': 'bills', 'mobile': 'bills', 'singtel': 'bills', 'starhub': 'bills', 'm1': 'bills',
+    'internet': 'bills', 'wifi': 'bills', 'rent': 'bills', 'insurance': 'bills',
+    
+    // Subscriptions
+    'netflix': 'subscription', 'spotify': 'subscription', 'youtube': 'subscription',
+    'disney': 'subscription', 'hbo': 'subscription', 'prime': 'subscription',
+    'chatgpt': 'subscription', 'gym': 'subscription', 'activesg': 'subscription',
+    
+    // Entertainment
+    'movie': 'entertainment', 'cinema': 'entertainment', 'gv': 'entertainment', 
+    'cathay': 'entertainment', 'shaw': 'entertainment', 'concert': 'entertainment',
+    'escape': 'entertainment', 'uss': 'entertainment', 'zoo': 'entertainment',
+    'karaoke': 'entertainment', 'ktv': 'entertainment', 'arcade': 'entertainment',
+    
+    // Health
+    'doctor': 'health', 'clinic': 'health', 'hospital': 'health', 'medicine': 'health',
+    'pharmacy': 'health', 'dental': 'health', 'dentist': 'health', 'polyclinic': 'health',
+    'checkup': 'health', 'vitamin': 'health'
+};
+
+// Smart auto-categorize function
+function autoCategory(description) {
+    const desc = description.toLowerCase();
+    // Check exact match first
+    if (AUTO_CATEGORIES[desc]) return AUTO_CATEGORIES[desc];
+    // Check if description contains any keyword
+    for (const [keyword, category] of Object.entries(AUTO_CATEGORIES)) {
+        if (desc.includes(keyword)) return category;
+    }
+    return null; // Will use provided category or default to 'other'
+}
+
 // Singapore timezone helper
 function getSingaporeTime() {
     return new Date().toLocaleString('en-SG', { 
@@ -491,6 +548,30 @@ function validateCategory(category) {
 function parseExpenseMessage(message) {
     const msg = message.toLowerCase().trim();
     
+    // ===== QUICK SHORTCUTS =====
+    // ? = today's summary
+    if (msg === '?') {
+        return { type: 'today' };
+    }
+    // ?? = weekly summary
+    if (msg === '??') {
+        return { type: 'weekly' };
+    }
+    // ??? = monthly summary  
+    if (msg === '???') {
+        return { type: 'monthly' };
+    }
+    // $ = dashboard link
+    if (msg === '$') {
+        return { type: 'dashboard' };
+    }
+    // ! = delete last
+    if (msg === '!') {
+        return { type: 'delete' };
+    }
+    
+    // ===== EXPENSE PATTERNS =====
+    
     // Pattern: add [description] [amount] [category]
     // Example: add lunch 15 food
     const addPattern = /^add\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s+(\w+)$/i;
@@ -519,6 +600,20 @@ function parseExpenseMessage(message) {
         };
     }
     
+    // Pattern: [description] $[amount]
+    // Example: coffee $5, lunch $12.50
+    const dollarPattern = /^([a-zA-Z][a-zA-Z\s]*?)\s*\$(\d+(?:\.\d{1,2})?)$/i;
+    const dollarMatch = msg.match(dollarPattern);
+    
+    if (dollarMatch) {
+        return {
+            type: 'add',
+            description: dollarMatch[1].trim(),
+            amount: parseFloat(dollarMatch[2]),
+            category: 'auto' // Will be auto-categorized
+        };
+    }
+    
     // Quick add pattern: [amount] [category] [description]
     // Example: 15 food lunch
     const quickPattern = /^(\d+(?:\.\d{1,2})?)\s+(\w+)\s+(.+)$/i;
@@ -533,8 +628,8 @@ function parseExpenseMessage(message) {
         };
     }
     
-    // Simple pattern: [description] [amount]
-    // Example: coffee 5, lunch 12
+    // Simplest pattern: [description] [amount]
+    // Example: coffee 5, lunch 12, grab 15
     const simplePattern = /^([a-zA-Z][a-zA-Z\s]*?)\s+(\d+(?:\.\d{1,2})?)$/i;
     const simpleMatch = msg.match(simplePattern);
     
@@ -543,11 +638,11 @@ function parseExpenseMessage(message) {
             type: 'add',
             description: simpleMatch[1].trim(),
             amount: parseFloat(simpleMatch[2]),
-            category: 'other'
+            category: 'auto' // Will be auto-categorized
         };
     }
     
-    // Commands
+    // ===== COMMANDS =====
     if (msg === 'total' || msg === 'monthly' || msg === 'month') {
         return { type: 'monthly' };
     }
@@ -563,7 +658,7 @@ function parseExpenseMessage(message) {
     if (msg === 'delete' || msg === 'undo' || msg === 'remove') {
         return { type: 'delete' };
     }
-    if (msg === 'help' || msg === '?') {
+    if (msg === 'help') {
         return { type: 'help' };
     }
     if (msg === 'dashboard' || msg === 'link') {
@@ -649,9 +744,17 @@ async function handleMessage(messageBody, phoneNumber) {
     try {
         switch (parsed.type) {
             case 'add':
-                // Validate category
-                const validCategory = validateCategory(parsed.category);
-                const expense = await addExpense(phoneNumber, parsed.description, parsed.amount, validCategory);
+                // Smart auto-categorization
+                let finalCategory;
+                if (parsed.category === 'auto') {
+                    // Try to auto-categorize based on description
+                    finalCategory = autoCategory(parsed.description) || 'other';
+                } else {
+                    // Validate provided category
+                    finalCategory = validateCategory(parsed.category);
+                }
+                
+                const expense = await addExpense(phoneNumber, parsed.description, parsed.amount, finalCategory);
                 const todayData = await getTodayTotal(phoneNumber);
                 
                 // Check budget alert
@@ -665,13 +768,8 @@ async function handleMessage(messageBody, phoneNumber) {
                     }
                 }
                 
-                let categoryNote = '';
-                if (validCategory !== parsed.category) {
-                    categoryNote = `\n(Changed "${parsed.category}" → "${validCategory}")`;
-                }
-                
                 const sgtTime = getSingaporeTime();
-                return `✅ Added: ${parsed.description}\n💰 Amount: $${parsed.amount}\n📁 Category: ${validCategory}\n🕐 Time: ${sgtTime}${categoryNote}\n\n📊 Today's total: $${parseFloat(todayData.total).toFixed(2)}${budgetAlert}`;
+                return `✅ ${parsed.description} - $${parsed.amount}\n📁 ${finalCategory}\n🕐 ${sgtTime}\n\n📊 Today: $${parseFloat(todayData.total).toFixed(2)}${budgetAlert}`;
             
             case 'monthly':
                 const monthly = await getMonthlyTotal(phoneNumber);
@@ -789,37 +887,30 @@ async function handleMessage(messageBody, phoneNumber) {
                 return `📊 Export (${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()})\n\n\`\`\`\n${csv}\n\`\`\`\n\n💡 Copy this and paste into Excel/Google Sheets`;
             
             case 'help':
-                return `📱 *Expense Tracker Commands*\n
-*Add Expense:*
-• add lunch 15 food
-• 25 food dinner (quick format)
+                return `� *Expense Tracker*
 
-*View Reports:*
-• today - Today's total  
-• week - Weekly total
-• monthly - Monthly total
-• recent - Last 5 expenses
+*Quick Add (auto-categorizes!):*
+• coffee 5 → ☕ food
+• grab 15 → 🚗 transport
+• ntuc 50 → 🛒 shopping
+• netflix 15 → 📺 subscription
 
-*Budget:*
-• budget 500 - Set monthly budget
-• budget - View budget status
+*Or specify category:*
+• lunch 15 food
 
-*Recurring:*
-• recurring netflix 15 sub 1 - Add (day 1)
-• recurring - List all
-• stop recurring 1 - Stop by ID
-
-*Edit & Delete:*
-• edit [id] [desc] [amt] [cat]
-• delete - Remove last
+*Shortcuts:*
+• ? → Today's spending
+• ?? → This week
+• ??? → This month
+• $ → Dashboard link
+• ! → Delete last expense
 
 *Other:*
-• pin 1234 - Set dashboard PIN
-• reset pin - Forgot PIN? Get new one
-• dashboard - Get your link
-• export - Export to CSV
+• budget 500 → Set budget
+• pin 1234 → Set PIN
+• help → This message
 
-*Categories:* food, transport, shopping, bills, entertainment, health, subscription, other`;
+*Auto-categories:* coffee, lunch, grab, mrt, ntuc, netflix, and 50+ more!`;
             
             default:
                 return null; // Don't reply to unknown messages

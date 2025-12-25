@@ -46,7 +46,7 @@ app.post('/api/create-access-token', async (req, res) => {
     }
     
     const token = generateToken();
-    const expiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const expiry = Date.now() + 30 * 60 * 1000; // 30 minutes (extended from 10)
     
     accessTokens.set(token, { phone, expiry });
     
@@ -144,9 +144,9 @@ app.post('/api/verify-pin', async (req, res) => {
     const valid = result.rows[0].pin === hashedPin;
     
     if (valid) {
-      // Create a long-lived session token (1 hour)
+      // Create a long-lived session token (24 hours)
       const sessionToken = generateToken();
-      sessions.set(sessionToken, { phone, expiry: Date.now() + 60 * 60 * 1000 });
+      sessions.set(sessionToken, { phone, expiry: Date.now() + 24 * 60 * 60 * 1000 });
       
       // Clean old sessions
       for (const [t, data] of sessions.entries()) {
