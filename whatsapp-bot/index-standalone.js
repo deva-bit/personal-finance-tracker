@@ -502,6 +502,20 @@ function parseExpenseMessage(message) {
         };
     }
     
+    // Pattern: [description] [amount] [category]
+    // Example: lunch 15 food, coffee 5 food
+    const descAmountCatPattern = /^([a-zA-Z][a-zA-Z\s]*?)\s+(\d+(?:\.\d{1,2})?)\s+(\w+)$/i;
+    const descAmountCatMatch = msg.match(descAmountCatPattern);
+    
+    if (descAmountCatMatch) {
+        return {
+            type: 'add',
+            description: descAmountCatMatch[1].trim(),
+            amount: parseFloat(descAmountCatMatch[2]),
+            category: descAmountCatMatch[3].toLowerCase()
+        };
+    }
+    
     // Quick add pattern: [amount] [category] [description]
     // Example: 15 food lunch
     const quickPattern = /^(\d+(?:\.\d{1,2})?)\s+(\w+)\s+(.+)$/i;
@@ -513,6 +527,20 @@ function parseExpenseMessage(message) {
             amount: parseFloat(quickMatch[1]),
             category: quickMatch[2].toLowerCase(),
             description: quickMatch[3].trim()
+        };
+    }
+    
+    // Simple pattern: [description] [amount]
+    // Example: coffee 5, lunch 12
+    const simplePattern = /^([a-zA-Z][a-zA-Z\s]*?)\s+(\d+(?:\.\d{1,2})?)$/i;
+    const simpleMatch = msg.match(simplePattern);
+    
+    if (simpleMatch) {
+        return {
+            type: 'add',
+            description: simpleMatch[1].trim(),
+            amount: parseFloat(simpleMatch[2]),
+            category: 'other'
         };
     }
     
