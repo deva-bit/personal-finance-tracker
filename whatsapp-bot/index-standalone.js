@@ -150,6 +150,64 @@ async function deleteLastExpense(phoneNumber) {
     }
 }
 
+// ============== PIN MANAGEMENT ==============
+
+async function setUserPin(phoneNumber, pin) {
+    const pgClient = new PgClient(dbConfig);
+    try {
+        await pgClient.connect();
+        // Create users table if not exists
+        await pgClient.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                phone_number VARCHAR(20) PRIMARY KEY,
+                pin VARCHAR(4) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        // Upsert PIN
+        const result = await pgClient.query(
+            `INSERT INTO users (phone_number, pin) VALUES ($1, $2)
+             ON CONFLICT (phone_number) DO UPDATE SET pin = $2
+             RETURNING *`,
+            [phoneNumber, pin]
+        );
+        return result.rows[0];
+    } finally {
+        await pgClient.end();
+    }
+}
+
+async function getUserPin(phoneNumber) {
+    const pgClient = new PgClient(dbConfig);
+    try {
+        await pgClient.connect();
+        const result = await pgClient.query(
+            `SELECT pin FROM users WHERE phone_number = $1`,
+            [phoneNumber]
+        );
+        return result.rows[0]?.pin || null;
+    } finally {
+        await pgClient.end();
+    }
+}
+
+async function updateExpense(expenseId, phoneNumber, description, amount, category) {
+    const pgClient = new PgClient(dbConfig);
+    try {
+        await pgClient.connect();
+        const result = await pgClient.query(
+            `UPDATE expenses 
+             SET description = $1, amount = $2, category = $3
+             WHERE id = $4 AND phone_number = $5
+             RETURNING *`,
+            [description, amount, category, expenseId, phoneNumber]
+        );
+        return result.rows[0];
+    } finally {
+        await pgClient.end();
+    }
+}
+
 // ============== MESSAGE PARSING ==============
 
 function parseExpenseMessage(message) {
@@ -190,7 +248,7 @@ function parseExpenseMessage(message) {
     if (msg === 'week' || msg === 'weekly') {
         return { type: 'weekly' };
     }
-    if (msg === 'today') {
+    if (msg === 'today' ) {
         return { type: 'today' };
     }
     if (msg === 'recent' || msg === 'last' || msg === 'history') {
@@ -204,6 +262,27 @@ function parseExpenseMessage(message) {
     }
     if (msg === 'dashboard' || msg === 'link') {
         return { type: 'dashboard' };
+    }
+    
+    // PIN command: pin 1234 or set pin 1234
+    if (msg.startsWith('pin ') || msg.startsWith('set pin ')) {
+        const pin = msg.replace('set ', '').replace('pin ', '').trim();
+        if (pin && pin.length === 4 && !isNaN(pin)) {
+            return { type: 'setpin', pin };
+        }
+    }
+    
+    // Edit command: edit [id] [description] [amount] [category]
+    const editPattern = /^edit\s+(\d+)\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s+(\w+)$/i;
+    const editMatch = msg.match(editPattern);
+    if (editMatch) {
+        return {
+            type: 'edit',
+            id: parseInt(editMatch[1]),
+            description: editMatch[2].trim(),
+            amount: parseFloat(editMatch[3]),
+            category: editMatch[4].toLowerCase()
+        };
     }
     
     return { type: 'unknown' };
@@ -252,7 +331,22 @@ async function handleMessage(messageBody, phoneNumber) {
                 return '❌ No expense to delete.';
             
             case 'dashboard':
-                return `🔗 Your Dashboard:\n${DASHBOARD_URL}?phone=${phoneNumber}`;
+                const hasPin = await getUserPin(phoneNumber);
+                if (!hasPin) {
+                    return `⚠️ Please set a PIN first for dashboard security!\n\nSend: pin 1234\n(Use any 4 digits you'll remember)`;
+                }
+                return `🔗 Your Dashboard:\n${DASHBOARD_URL}?phone=${phoneNumber}\n\n🔒 You'll need your PIN to access it.`;
+            
+            case 'setpin':
+                await setUserPin(phoneNumber, parsed.pin);
+                return `🔒 PIN set successfully!\n\nNow you can access your dashboard securely.\nSend "dashboard" to get your link.`;
+            
+            case 'edit':
+                const updated = await updateExpense(parsed.id, phoneNumber, parsed.description, parsed.amount, parsed.category);
+                if (updated) {
+                    return `✏️ Updated expense #${parsed.id}:\n${parsed.description} - $${parsed.amount} (${parsed.category})`;
+                }
+                return '❌ Expense not found or you cannot edit it.';
             
             case 'help':
                 return `📱 *Expense Tracker Commands*\n
@@ -262,15 +356,18 @@ async function handleMessage(messageBody, phoneNumber) {
 • 25 food dinner (quick format)
 
 *View Reports:*
-• today - Today's total
+• today - Today's total  
 • week - Weekly total
 • monthly - Monthly total
 • recent - Last 5 expenses
 
-*Other:*
+*Edit & Delete:*
+• edit [id] [desc] [amount] [category]
 • delete - Remove last expense
-• dashboard - Get your dashboard link
-• help - Show this message
+
+*Security & Dashboard:*
+• pin 1234 - Set your dashboard PIN
+• dashboard - Get your secure link
 
 *Categories:* food, transport, shopping, bills, entertainment, health, other`;
             

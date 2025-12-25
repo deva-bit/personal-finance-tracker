@@ -19,14 +19,112 @@ const dbConfig = process.env.DATABASE_URL
       password: process.env.DB_PASSWORD || 'n8n123'
     };
 
-// Root endpoint - show welcome page or dashboard
+// Root endpoint - redirect to dashboard
 app.get('/', (req, res) => {
   if (req.query.phone) {
     // If phone provided, redirect to dashboard
     res.redirect(`/dashboard.html?phone=${req.query.phone}`);
   } else {
-    // Show welcome/login page
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    // No login page - access only via WhatsApp bot link
+    res.status(403).send(`
+      <html>
+        <head><title>Access Denied</title></head>
+        <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: linear-gradient(135deg, #667eea, #764ba2); margin: 0;">
+          <div style="background: white; padding: 40px; border-radius: 16px; text-align: center; max-width: 400px;">
+            <h1 style="color: #dc2626;">🔒 Access Denied</h1>
+            <p style="color: #666; margin-top: 15px;">This dashboard can only be accessed through the WhatsApp bot.</p>
+            <p style="color: #888; margin-top: 20px; font-size: 14px;">Send <code style="background: #f3f4f6; padding: 3px 8px; border-radius: 4px;">dashboard</code> on WhatsApp to get your personal link.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// PIN verification endpoint
+app.post('/api/verify-pin', async (req, res) => {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const { phone, pin } = req.body;
+    
+    if (!phone || !pin) {
+      return res.status(400).json({ error: 'Phone and PIN required' });
+    }
+    
+    const result = await client.query(
+      'SELECT pin FROM users WHERE phone_number = $1',
+      [phone]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, error: 'No PIN set. Please set one via WhatsApp: pin 1234' });
+    }
+    
+    const valid = result.rows[0].pin === pin;
+    res.json({ valid });
+  } catch (error) {
+    console.error('PIN verification error:', error);
+    res.status(500).json({ error: 'Database error' });
+  } finally {
+    await client.end();
+  }
+});
+
+// Check if user has PIN set
+app.get('/api/has-pin', async (req, res) => {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const phone = req.query.phone;
+    
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone required' });
+    }
+    
+    const result = await client.query(
+      'SELECT 1 FROM users WHERE phone_number = $1',
+      [phone]
+    );
+    
+    res.json({ hasPin: result.rows.length > 0 });
+  } catch (error) {
+    res.json({ hasPin: false });
+  } finally {
+    await client.end();
+  }
+});
+
+// Update expense endpoint
+app.put('/api/expenses/:id', async (req, res) => {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    const { phone, description, amount, category } = req.body;
+    const expenseId = req.params.id;
+    
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone required' });
+    }
+    
+    const result = await client.query(
+      `UPDATE expenses 
+       SET description = $1, amount = $2, category = $3
+       WHERE id = $4 AND phone_number = $5
+       RETURNING *`,
+      [description, amount, category, expenseId, phone]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Expense not found' });
+    }
+    
+    res.json({ success: true, expense: result.rows[0] });
+  } catch (error) {
+    console.error('Update error:', error);
+    res.status(500).json({ error: 'Database error' });
+  } finally {
+    await client.end();
   }
 });
 
