@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💰 My Expenses</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -11,50 +13,71 @@
             box-sizing: border-box;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
         .container {
-            max-width: 1200px;
+            max-width: 1000px;
             margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         h1 {
             color: white;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5em;
+            font-size: 1.8em;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
-        .phone-info {
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .header-btn {
             background: rgba(255,255,255,0.2);
             color: white;
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 18px;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .header-btn:hover {
+            background: rgba(255,255,255,0.3);
         }
         .month-selector {
             background: white;
-            border-radius: 10px;
-            padding: 20px;
+            border-radius: 12px;
+            padding: 15px 20px;
             margin-bottom: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 20px;
+            gap: 15px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            flex-wrap: wrap;
         }
         .month-selector button {
             background: #667eea;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 18px;
+            font-size: 16px;
             transition: background 0.3s;
         }
         .month-selector button:hover {
@@ -67,10 +90,11 @@
         .month-selector select {
             padding: 10px 15px;
             border: 2px solid #e2e8f0;
-            border-radius: 5px;
-            font-size: 16px;
+            border-radius: 8px;
+            font-size: 15px;
             cursor: pointer;
             background: white;
+            font-family: inherit;
         }
         .month-selector select:focus {
             outline: none;
@@ -78,26 +102,179 @@
         }
         .cards {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
         }
         .card {
             background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
             transition: transform 0.3s;
         }
         .card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-3px);
         }
         .card h2 {
             color: #667eea;
-            font-size: 1em;
-            margin-bottom: 15px;
+            font-size: 0.85em;
+            margin-bottom: 12px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .card .amount {
+            font-size: 2em;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 5px;
+        }
+        .card .subtitle {
+            color: #718096;
+            font-size: 0.85em;
+        }
+        .table-card {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+        .table-card h2 {
+            color: #1a1a2e;
+            margin-bottom: 20px;
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th {
+            background: #f7fafc;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #4a5568;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #2d3748;
+        }
+        tr:hover {
+            background: #f7fafc;
+        }
+        .amount-cell {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .category-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .cat-food { background: #fef3c7; color: #92400e; }
+        .cat-transport { background: #dbeafe; color: #1e40af; }
+        .cat-entertainment { background: #fce7f3; color: #9f1239; }
+        .cat-shopping { background: #e0e7ff; color: #3730a3; }
+        .cat-bills { background: #fecaca; color: #991b1b; }
+        .cat-health { background: #d1fae5; color: #065f46; }
+        .cat-other { background: #e5e7eb; color: #1f2937; }
+        .cat-subscription { background: #fef08a; color: #854d0e; }
+        .delete-btn {
+            background: #fee2e2;
+            color: #dc2626;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .delete-btn:hover {
+            background: #dc2626;
+            color: white;
+        }
+        .loading {
+            text-align: center;
+            padding: 80px;
+            color: white;
+            font-size: 1.2em;
+        }
+        .refresh-info {
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            margin-top: 20px;
+            font-size: 0.85em;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #a0aec0;
+        }
+        .empty-state span {
+            font-size: 48px;
+            display: block;
+            margin-bottom: 15px;
+        }
+        .quick-tip {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .quick-tip code {
+            background: rgba(255,255,255,0.2);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        @media (max-width: 600px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            h1 {
+                font-size: 1.5em;
+            }
+            .card .amount {
+                font-size: 1.6em;
+            }
+            .table-card {
+                padding: 15px;
+            }
+            td, th {
+                padding: 10px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 My Expenses</h1>
+            <div class="header-buttons">
+                <a href="/" class="header-btn">👤 Switch User</a>
+                <button class="header-btn" onclick="loadData()">🔄 Refresh</button>
+            </div>
+        </div>
+        
+        <div class="quick-tip">
+            💡 <strong>Tip:</strong> Send <code>add lunch 15 food</code> on WhatsApp to add expenses!
+        </div>
         }
         .card .amount {
             font-size: 2.5em;

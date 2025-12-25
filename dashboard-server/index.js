@@ -19,9 +19,15 @@ const dbConfig = process.env.DATABASE_URL
       password: process.env.DB_PASSWORD || 'n8n123'
     };
 
-// Root endpoint
+// Root endpoint - show welcome page or dashboard
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+  if (req.query.phone) {
+    // If phone provided, redirect to dashboard
+    res.redirect(`/dashboard.html?phone=${req.query.phone}`);
+  } else {
+    // Show welcome/login page
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // Monthly expenses endpoint with date filter
@@ -183,6 +189,11 @@ app.delete('/api/expenses/:id', async (req, res) => {
   } finally {
     await client.end();
   }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'expense-dashboard' });
 });
 
 const PORT = process.env.PORT || 8080;
