@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('path');
 const { Client: PgClient } = require('pg');
 const crypto = require('crypto');
+const axios = require('axios');
 
 // Valid categories - for validation
 const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'entertainment', 'health', 'subscription', 'other'];
@@ -45,17 +46,15 @@ const SHARED_SECRET = process.env.SHARED_SECRET || 'expense-tracker-2024';
 // Function to get dashboard access token
 async function getDashboardToken(phoneNumber) {
     try {
-        const response = await fetch(`${DASHBOARD_URL}/api/create-access-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: phoneNumber, secret: SHARED_SECRET })
+        const response = await axios.post(`${DASHBOARD_URL}/api/create-access-token`, {
+            phone: phoneNumber,
+            secret: SHARED_SECRET
         });
-        if (response.ok) {
-            const data = await response.json();
-            return data.token;
+        if (response.data && response.data.token) {
+            return response.data.token;
         }
     } catch (error) {
-        console.error('Error getting dashboard token:', error);
+        console.error('Error getting dashboard token:', error.message);
     }
     return null;
 }
