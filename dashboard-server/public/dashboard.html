@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💰 My Expenses</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        /* PIN Screen */
+        .pin-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+        }
+        .pin-box {
+            background: white;
+            border-radius: 24px;
+            padding: 50px 40px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .pin-box h1 { color: #1a1a2e; font-size: 24px; margin-bottom: 10px; }
+        .pin-box p { color: #666; margin-bottom: 30px; }
+        .pin-input {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+        .pin-input input {
+            width: 55px;
+            height: 60px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: 700;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .pin-input input:focus { border-color: #667eea; box-shadow: 0 0 0 4px rgba(102,126,234,0.1); }
+        .pin-error { color: #dc2626; margin-bottom: 15px; display: none; }
+        .pin-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .pin-btn:hover { transform: translateY(-2px); }
+        .pin-hint { color: #888; font-size: 13px; margin-top: 20px; }
+        .pin-hint code { background: #f3f4f6; padding: 3px 8px; border-radius: 4px; font-family: monospace; }
+        
+        /* Dashboard */
+        .dashboard { display: none; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        h1 { color: white; font-size: 1.8em; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .header-btn:hover { background: rgba(255,255,255,0.3); }
+        
+        .quick-tip {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .quick-tip code {
+            background: rgba(255,255,255,0.2);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .month-selector {
+            background: white;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            flex-wrap: wrap;
+        }
+        .month-selector button {
+            background: #667eea;
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .month-selector select {
+            padding: 10px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+            background: white;
+        }
+        
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .card h2 { color: #667eea; font-size: 0.85em; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .amount { font-size: 2em; font-weight: 700; color: #1a1a2e; margin-bottom: 5px; }
+        .card .subtitle { color: #718096; font-size: 0.85em; }
+        
+        .table-card {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+        .table-card h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 1.2em; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background: #f7fafc; padding: 12px 15px; text-align: left; font-weight: 600; color: #4a5568; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #2d3748; }
+        tr:hover { background: #f7fafc; }
+        .amount-cell { color: #667eea; font-weight: 600; }
+        
+        .category-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .cat-food { background: #fef3c7; color: #92400e; }
+        .cat-transport { background: #dbeafe; color: #1e40af; }
+        .cat-entertainment { background: #fce7f3; color: #9f1239; }
+        .cat-shopping { background: #e0e7ff; color: #3730a3; }
+        .cat-bills { background: #fecaca; color: #991b1b; }
+        .cat-health { background: #d1fae5; color: #065f46; }
+        .cat-other { background: #e5e7eb; color: #1f2937; }
+        .cat-subscription { background: #fef08a; color: #854d0e; }
+        
+        .edit-btn {
+            background: #e0e7ff;
+            color: #3730a3;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .edit-btn:hover { background: #3730a3; color: white; }
+        
+        .refresh-info {
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            margin-top: 20px;
+            font-size: 0.85em;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+        }
+        .modal h2 { margin-bottom: 20px; color: #1a1a2e; }
+        .modal label { display: block; margin-bottom: 5px; font-weight: 600; color: #333; font-size: 14px; }
+        .modal input, .modal select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 10px; }
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .modal-btn.cancel { background: #e5e7eb; color: #374151; }
+        .modal-btn.save { background: #667eea; color: white; }
+        
+        @media (max-width: 600px) {
+            .header { flex-direction: column; align-items: flex-start; }
+            h1 { font-size: 1.5em; }
+            .card .amount { font-size: 1.6em; }
+            td, th { padding: 10px 8px; font-size: 13px; }
+            .pin-box { padding: 30px 20px; }
+            .pin-input input { width: 50px; height: 55px; font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- PIN Entry Screen -->
+        <div id="pinScreen" class="pin-screen">
+            <div class="pin-box">
+                <h1>🔒 Enter Your PIN</h1>
+                <p>Enter your 4-digit PIN to access your expenses</p>
+                <div class="pin-input">
+                    <input type="tel" maxlength="1" id="pin1" autofocus>
+                    <input type="tel" maxlength="1" id="pin2">
+                    <input type="tel" maxlength="1" id="pin3">
+                    <input type="tel" maxlength="1" id="pin4">
+                </div>
+                <div id="pinError" class="pin-error">❌ Incorrect PIN. Please try again.</div>
+                <button class="pin-btn" onclick="verifyPin()">Unlock Dashboard</button>
+                <p class="pin-hint">💡 Set or change your PIN via WhatsApp:<br><code>pin 1234</code></p>
+            </div>
+        </div>
+        
+        <!-- No PIN Set Screen -->
+        <div id="noPinScreen" class="pin-screen" style="display: none;">
+            <div class="pin-box">
+                <h1>🔐 PIN Required</h1>
+                <p>You haven't set a PIN yet for dashboard access.</p>
+                <p style="margin-top: 20px;">Please send this message on WhatsApp:</p>
+                <p style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin-top: 10px; font-family: monospace; font-size: 18px;">pin 1234</p>
+                <p class="pin-hint" style="margin-top: 20px;">Replace 1234 with your own 4-digit PIN, then refresh this page.</p>
+                <button class="pin-btn" style="margin-top: 20px;" onclick="location.reload()">🔄 Refresh Page</button>
+            </div>
+        </div>
+        
+        <!-- Dashboard -->
+        <div id="dashboard" class="dashboard">
+            <div class="header">
+                <h1>💰 My Expenses</h1>
+                <button class="header-btn" onclick="loadData()">🔄 Refresh</button>
+            </div>
+            
+            <div class="quick-tip">
+                💡 <strong>Tip:</strong> Send <code>add lunch 15 food</code> on WhatsApp to add expenses!
+            </div>
+
+            <div class="month-selector">
+                <button onclick="changeMonth(-1)">◀</button>
+                <div style="display: flex; gap: 10px;">
+                    <select id="monthSelect" onchange="loadData()">
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                    <select id="yearSelect" onchange="loadData()"></select>
+                </div>
+                <button onclick="changeMonth(1)">▶</button>
+            </div>
+            
+            <div class="cards">
+                <div class="card">
+                    <h2>📅 This Month</h2>
+                    <div class="amount" id="monthlyTotal">$0.00</div>
+                    <div class="subtitle" id="monthlyCount">0 expenses</div>
+                </div>
+                <div class="card">
+                    <h2>📆 This Week</h2>
+                    <div class="amount" id="weeklyTotal">$0.00</div>
+                    <div class="subtitle" id="weeklyCount">0 expenses</div>
+                </div>
+            </div>
+            
+            <div class="table-card">
+                <h2>📊 Spending by Category</h2>
+                <table>
+                    <thead><tr><th>Category</th><th>Count</th><th>Total</th><th>%</th></tr></thead>
+                    <tbody id="categoryTable">
+                        <tr><td colspan="4" style="text-align:center;padding:30px;color:#999;">No expenses yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-card">
+                <h2>📝 Recent Expenses</h2>
+                <table>
+                    <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th>Action</th></tr></thead>
+                    <tbody id="recentTable">
+                        <tr><td colspan="5" style="text-align:center;padding:30px;color:#999;">No expenses yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="refresh-info">
+                🔄 Auto-refreshes every 30 seconds | Last updated: <span id="lastUpdate">-</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal">
+            <h2>✏️ Edit Expense</h2>
+            <input type="hidden" id="editId">
+            <label>Description</label>
+            <input type="text" id="editDescription" placeholder="e.g., Lunch">
+            <label>Amount ($)</label>
+            <input type="number" id="editAmount" step="0.01" placeholder="0.00">
+            <label>Category</label>
+            <select id="editCategory">
+                <option value="food">Food</option>
+                <option value="transport">Transport</option>
+                <option value="shopping">Shopping</option>
+                <option value="bills">Bills</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="health">Health</option>
+                <option value="subscription">Subscription</option>
+                <option value="other">Other</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn save" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const phoneNumber = urlParams.get('phone');
+        const API = window.location.origin + '/api';
+        
+        let selectedMonth = new Date().getMonth() + 1;
+        let selectedYear = new Date().getFullYear();
+        
+        // Check access
+        if (!phoneNumber) {
+            document.getElementById('pinScreen').innerHTML = `
+                <div class="pin-box">
+                    <h1>❌ Access Denied</h1>
+                    <p>Please use the link from WhatsApp bot to access your dashboard.</p>
+                    <p class="pin-hint">Send <code>dashboard</code> on WhatsApp to get your link.</p>
+                </div>
+            `;
+        } else {
+            checkPinStatus();
+        }
+        
+        // Check if user has PIN set
+        async function checkPinStatus() {
+            try {
+                const response = await fetch(`${API}/has-pin?phone=${phoneNumber}`);
+                const data = await response.json();
+                
+                if (!data.hasPin) {
+                    document.getElementById('pinScreen').style.display = 'none';
+                    document.getElementById('noPinScreen').style.display = 'flex';
+                }
+            } catch (error) {
+                console.error('Error checking PIN status:', error);
+            }
+        }
+        
+        // PIN input auto-focus
+        document.querySelectorAll('.pin-input input').forEach((input, index, inputs) => {
+            input.addEventListener('input', (e) => {
+                if (e.target.value && index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                }
+                if (index === inputs.length - 1 && e.target.value) {
+                    verifyPin();
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                    inputs[index - 1].focus();
+                }
+            });
+        });
+        
+        // Verify PIN
+        async function verifyPin() {
+            const pin = ['pin1', 'pin2', 'pin3', 'pin4'].map(id => document.getElementById(id).value).join('');
+            
+            if (pin.length !== 4) return;
+            
+            try {
+                const response = await fetch(`${API}/verify-pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: phoneNumber, pin })
+                });
+                const data = await response.json();
+                
+                if (data.valid) {
+                    document.getElementById('pinScreen').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    initializeDashboard();
+                } else {
+                    document.getElementById('pinError').style.display = 'block';
+                    document.querySelectorAll('.pin-input input').forEach(input => {
+                        input.value = '';
+                        input.style.borderColor = '#dc2626';
+                    });
+                    document.getElementById('pin1').focus();
+                    
+                    setTimeout(() => {
+                        document.querySelectorAll('.pin-input input').forEach(input => {
+                            input.style.borderColor = '#e2e8f0';
+                        });
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('PIN verification error:', error);
+            }
+        }
+        
+        function initializeDashboard() {
+            document.getElementById('monthSelect').value = selectedMonth;
+            const yearSelect = document.getElementById('yearSelect');
+            const currentYear = new Date().getFullYear();
+            for (let year = 2024; year <= currentYear + 1; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                if (year === selectedYear) option.selected = true;
+                yearSelect.appendChild(option);
+            }
+            loadData();
+            setInterval(loadData, 30000);
+        }
+
+        function changeMonth(direction) {
+            selectedMonth += direction;
+            if (selectedMonth > 12) { selectedMonth = 1; selectedYear++; }
+            else if (selectedMonth < 1) { selectedMonth = 12; selectedYear--; }
+            document.getElementById('monthSelect').value = selectedMonth;
+            document.getElementById('yearSelect').value = selectedYear;
+            loadData();
+        }
+
+        async function loadData() {
+            try {
+                selectedMonth = parseInt(document.getElementById('monthSelect').value);
+                selectedYear = parseInt(document.getElementById('yearSelect').value);
+                
+                const [monthly, weekly, categories, recent] = await Promise.all([
+                    fetch(`${API}/expenses/monthly?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
+                    fetch(`${API}/expenses/weekly?phone=${phoneNumber}`).then(r => r.json()),
+                    fetch(`${API}/expenses/by-category?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json()),
+                    fetch(`${API}/expenses/recent?phone=${phoneNumber}&month=${selectedMonth}&year=${selectedYear}`).then(r => r.json())
+                ]);
+
+                displayData({ monthly, weekly, categories, recent });
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function displayData(data) {
+            const monthlyTotal = parseFloat(data.monthly.total || 0);
+            document.getElementById('monthlyTotal').textContent = `$${monthlyTotal.toFixed(2)}`;
+            document.getElementById('monthlyCount').textContent = `${data.monthly.count || 0} expenses`;
+            
+            const weeklyTotal = parseFloat(data.weekly.total || 0);
+            document.getElementById('weeklyTotal').textContent = `$${weeklyTotal.toFixed(2)}`;
+            document.getElementById('weeklyCount').textContent = `${data.weekly.count || 0} expenses`;
+            
+            const catTable = document.getElementById('categoryTable');
+            if (data.categories.length === 0) {
+                catTable.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:#999;">No expenses yet</td></tr>';
+            } else {
+                catTable.innerHTML = data.categories.map(cat => {
+                    const total = parseFloat(cat.total);
+                    const pct = monthlyTotal > 0 ? ((total / monthlyTotal) * 100).toFixed(0) : 0;
+                    return `<tr>
+                        <td><span class="category-badge cat-${cat.category}">${cat.category}</span></td>
+                        <td>${cat.count}</td>
+                        <td class="amount-cell">$${total.toFixed(2)}</td>
+                        <td>${pct}%</td>
+                    </tr>`;
+                }).join('');
+            }
+
+            const recTable = document.getElementById('recentTable');
+            if (data.recent.length === 0) {
+                recTable.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:#999;">No expenses yet</td></tr>';
+            } else {
+                recTable.innerHTML = data.recent.map(exp => `
+                    <tr>
+                        <td>${exp.date}</td>
+                        <td><strong>${exp.description}</strong><br><small style="color:#999;">${exp.added_on}</small></td>
+                        <td><span class="category-badge cat-${exp.category}">${exp.category}</span></td>
+                        <td class="amount-cell">$${parseFloat(exp.amount).toFixed(2)}</td>
+                        <td><button class="edit-btn" onclick="openEdit(${exp.id}, '${exp.description.replace(/'/g, "\\'")}', ${exp.amount}, '${exp.category}')">✏️ Edit</button></td>
+                    </tr>
+                `).join('');
+            }
+        }
+        
+        // Edit Modal Functions
+        function openEdit(id, description, amount, category) {
+            document.getElementById('editId').value = id;
+            document.getElementById('editDescription').value = description;
+            document.getElementById('editAmount').value = amount;
+            document.getElementById('editCategory').value = category;
+            document.getElementById('editModal').style.display = 'flex';
+        }
+        
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+        
+        async function saveEdit() {
+            const id = document.getElementById('editId').value;
+            const description = document.getElementById('editDescription').value;
+            const amount = parseFloat(document.getElementById('editAmount').value);
+            const category = document.getElementById('editCategory').value;
+            
+            if (!description || !amount) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API}/expenses/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: phoneNumber, description, amount, category })
+                });
+                
+                if (response.ok) {
+                    closeModal();
+                    loadData();
+                } else {
+                    alert('Failed to update expense');
+                }
+            } catch (error) {
+                alert('Error updating expense');
+            }
+        }
+        
+        // Close modal on outside click
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target.id === 'editModal') closeModal();
+        });
+    </script>
+</body>
+</html>
