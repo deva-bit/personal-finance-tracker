@@ -8,7 +8,7 @@ const { Client: PgClient } = require('pg');
 // WhatsApp Client Setup
 const client = new Client({
     authStrategy: new LocalAuth({
-        dataPath: '/app/.wwebjs_auth'
+        dataPath: './.wwebjs_auth'
     }),
     puppeteer: {
         headless: true,
@@ -19,10 +19,13 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--disable-extensions',
+            '--disable-software-rasterizer',
+            '--disable-features=site-per-process',
+            '--disable-web-security'
         ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     }
 });
 
@@ -396,5 +399,16 @@ app.listen(PORT, () => {
     console.log(`🌐 QR Code page: http://localhost:${PORT}/qr.html`);
 });
 
-// Initialize WhatsApp client
-client.initialize();
+// Initialize WhatsApp client with retry
+async function initializeWhatsApp() {
+    try {
+        console.log('🚀 Starting WhatsApp client...');
+        await client.initialize();
+    } catch (error) {
+        console.error('❌ WhatsApp initialization failed:', error.message);
+        console.log('🔄 Retrying in 10 seconds...');
+        setTimeout(initializeWhatsApp, 10000);
+    }
+}
+
+initializeWhatsApp();
