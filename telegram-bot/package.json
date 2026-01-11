@@ -1,0 +1,14 @@
+{
+  "name": "telegram-expense-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for expense tracking",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0",
+    "pg": "^8.11.3",
+    "axios": "^1.6.2"
+  }
+}
