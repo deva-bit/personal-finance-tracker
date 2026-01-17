@@ -252,6 +252,38 @@ async function getDailyBreakdown(userId) {
     return breakdown;
 }
 
+async function getLastMonthTotal(userId) {
+    const res = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')
+        AND date < date_trunc('month', CURRENT_DATE)
+    `, [userId]);
+    return parseFloat(res.rows[0].total);
+}
+
+async function getYearlyTotals(userId) {
+    const thisYearRes = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
+    `, [userId]);
+
+    const lastYearRes = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE) - 1
+    `, [userId]);
+
+    return {
+        thisYear: parseFloat(thisYearRes.rows[0].total),
+        lastYear: parseFloat(lastYearRes.rows[0].total)
+    };
+}
+
 // ============== TOKEN MANAGEMENT ==============
 
 async function generateAccessToken(userId) {
@@ -437,6 +469,31 @@ const dashboardHTML = `
         .cal-amt { font-size: 0.65rem; color: var(--text-sub); margin-top: 2px; }
         .cal-day.has-spend .cal-amt { color: var(--accent); }
 
+        /* History Grid */
+        .history-grid {
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 12px; 
+            margin-top: 12px;
+        }
+        .history-item {
+            background: rgba(51, 65, 85, 0.3);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex; flex-direction: column;
+        }
+        .h-label { font-size: 0.75rem; color: var(--text-sub); margin-bottom: 4px; }
+        .h-val { font-size: 1rem; font-weight: 700; color: var(--text-main); }
+        .h-sub { font-size: 0.75rem; margin-top: 4px; opacity: 0.8; }
+        .trend-up { color: var(--danger); }
+        .trend-down { color: var(--success); }
+        
+        /* Toggle */
+        .toggle-header { cursor: pointer; user-select: none; }
+        .toggle-icon { transition: transform 0.3s; display: inline-block; }
+        .collapsed .toggle-icon { transform: rotate(-90deg); }
+        .collapsible-content { overflow: hidden; transition: max-height 0.3s ease-out; }
+
         /* Budget */
         .budget-info { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; }
         .progress-track { background: #334155; height: 12px; border-radius: 6px; overflow: hidden; }
@@ -615,45 +672,79 @@ const dashboardHTML = `
                     <div class="stat-card">
                         <div class="stat-label">WEEK</div>
                         <div class="stat-value">\${cur}\${data.week.total.toFixed(2)}</div>
+                        <div class="stat-value">${cur}${data.week.total.toFixed(2)}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">MONTH</div>
-                        <div class="stat-value">\${cur}\${data.month.total.toFixed(2)}</div>
+                        <div class="stat-value">${cur}${data.month.total.toFixed(2)}</div>
                     </div>
-                </div>\`;
+                </div>`;
 
-            // Budget
-            if (data.budget.budget > 0) {
-                html += \`
+// Comparison History
+if (data.comparison) {
+    const comp = data.comparison;
+    const mDiff = data.month.total - comp.lastMonth;
+    const mTrend = mDiff > 0 ? 'trend-up' : 'trend-down';
+    const mSign = mDiff > 0 ? '+' : '';
+
+    const yDiff = comp.thisYear - comp.lastYear;
+    const yTrend = yDiff > 0 ? 'trend-up' : 'trend-down';
+    const ySign = yDiff > 0 ? '+' : '';
+
+    html += `
+                <div class="section-card">
+                    <div class="section-header">
+                        <div class="section-title">Spending History</div>
+                    </div>
+                    <div class="history-grid">
+                        <div class="history-item">
+                            <div class="h-label">MONTH vs LAST</div>
+                            <div class="h-val">${cur}${data.month.total.toFixed(0)}</div>
+                            <div class="h-sub">vs ${cur}${comp.lastMonth.toFixed(0)}</div>
+                            <div class="h-sub ${mTrend}">${mSign}${cur}${Math.abs(mDiff).toFixed(0)}</div>
+                        </div>
+                        <div class="history-item">
+                            <div class="h-label">YEAR vs LAST</div>
+                            <div class="h-val">${cur}${comp.thisYear.toFixed(0)}</div>
+                            <div class="h-sub">vs ${cur}${comp.lastYear.toFixed(0)}</div>
+                            <div class="h-sub ${yTrend}">${ySign}${cur}${Math.abs(yDiff).toFixed(0)}</div>
+                        </div>
+                    </div>
+                </div>`;
+}
+
+// Budget
+if (data.budget.budget > 0) {
+    html += `
                 <div class="section-card">
                     <div class="section-header" style="margin-bottom:12px">
                         <div class="section-title">Monthly Budget</div>
-                        <div style="font-weight:600; font-size:0.9rem">\${budgetPercent.toFixed(0)}%</div>
+                        <div style="font-weight:600; font-size:0.9rem">${budgetPercent.toFixed(0)}%</div>
                     </div>
                     <div class="budget-info">
-                        <span>Spent: \${cur}\${data.budget.spent.toFixed(2)}</span>
-                        <span style="opacity:0.6">Target: \${cur}\${data.budget.budget.toFixed(0)}</span>
+                        <span>Spent: ${cur}${data.budget.spent.toFixed(2)}</span>
+                        <span style="opacity:0.6">Target: ${cur}${data.budget.budget.toFixed(0)}</span>
                     </div>
                     <div class="progress-track">
-                        <div class="progress-fill" style="width: \${budgetPercent}%; background: \${progressBarColor}"></div>
+                        <div class="progress-fill" style="width: ${budgetPercent}%; background: ${progressBarColor}"></div>
                     </div>
                     <div style="text-align:right; font-size:0.8rem; margin-top:8px; color:var(--text-sub)">
-                        \${data.budget.remaining < 0 ? 'Over by' : 'Left:'} 
-                        <span style="color:\${data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">
-                            \${cur}\${Math.abs(data.budget.remaining).toFixed(2)}
+                        ${data.budget.remaining < 0 ? 'Over by' : 'Left:'} 
+                        <span style="color:${data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">
+                            ${cur}${Math.abs(data.budget.remaining).toFixed(2)}
                         </span>
                     </div>
-                </div>\`;
-            }
+                </div>`;
+}
 
-            // Calendar
-            if (data.daily) {
-                const todayBtn = new Date();
-                const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
-                const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
-                const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); // 0 is Sunday
-                
-                let calendarHtml = \`<div class="calendar-grid">
+// Calendar
+if (data.daily) {
+    const todayBtn = new Date();
+    const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
+    const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
+    const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); // 0 is Sunday
+
+    let calendarHtml = `<div class="calendar-grid">
                     <div class="cal-day-header">S</div>
                     <div class="cal-day-header">M</div>
                     <div class="cal-day-header">T</div>
@@ -661,59 +752,62 @@ const dashboardHTML = `
                     <div class="cal-day-header">T</div>
                     <div class="cal-day-header">F</div>
                     <div class="cal-day-header">S</div>
-                \`;
+                `;
 
-                // Empty slots
-                for(let i=0; i<firstDay; i++) {
-                    calendarHtml += \`<div class="cal-day empty"></div>\`;
-                }
+    // Empty slots
+    for (let i = 0; i < firstDay; i++) {
+        calendarHtml += `<div class="cal-day empty"></div>`;
+    }
 
-                // Days
-                for(let d=1; d<=daysInMonth; d++) {
-                    // Create YYYY-MM-DD key (careful with timezone, simplistic approach here is safer with local strings)
-                    // We assume data.daily keys are local date strings from DB string
-                    // Let's rely on simple string match: if today is 2023-10-05, we look for 2023-10-05
-                    const dateObj = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), d);
-                    const dateKey = dateObj.toISOString().split('T')[0]; // UTC based, might shift.
-                    // Better: construct string manually to avoid timezone shift
-                    const Y = todayBtn.getFullYear();
-                    const M = String(todayBtn.getMonth()+1).padStart(2, '0');
-                    const D = String(d).padStart(2, '0');
-                    const localKey = \`\${Y}-\${M}-\${D}\`;
+    // Days
+    for (let d = 1; d <= daysInMonth; d++) {
+        // Create YYYY-MM-DD key (careful with timezone, simplistic approach here is safer with local strings)
+        // We assume data.daily keys are local date strings from DB string
+        // Let's rely on simple string match: if today is 2023-10-05, we look for 2023-10-05
+        const dateObj = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), d);
+        const dateKey = dateObj.toISOString().split('T')[0]; // UTC based, might shift.
+        // Better: construct string manually to avoid timezone shift
+        const Y = todayBtn.getFullYear();
+        const M = String(todayBtn.getMonth() + 1).padStart(2, '0');
+        const D = String(d).padStart(2, '0');
+        const localKey = `${Y}-${M}-${D}`;
 
-                    const amount = data.daily[localKey] || 0;
-                    const isToday = d === todayBtn.getDate();
-                    
-                    let classes = 'cal-day';
-                    if (isToday) classes += ' today';
-                    if (amount > 0) classes += ' has-spend';
-                    if (amount > 100) classes += ' high-spend'; // Example threshold
-                    
-                    calendarHtml += \`
-                        <div class="\${classes}">
-                            \${d}
-                            \${amount > 0 ? \`<div class="cal-amt">\${Math.round(amount)}</div>\` : ''}
-                        </div>\`;
-                }
-                calendarHtml += '</div>';
+        const amount = data.daily[localKey] || 0;
+        const isToday = d === todayBtn.getDate();
 
-                html += \`
-                    <div class="section-card">
-                        <div class="section-header">
-                            <div class="section-title">\${currentMonth} Spending</div>
+        let classes = 'cal-day';
+        if (isToday) classes += ' today';
+        if (amount > 0) classes += ' has-spend';
+        if (amount > 100) classes += ' high-spend'; // Example threshold
+
+        calendarHtml += `
+                        <div class="${classes}">
+                            ${d}
+                            ${amount > 0 ? `<div class="cal-amt">${Math.round(amount)}</div>` : ''}
+                        </div>`;
+    }
+    calendarHtml += '</div>';
+
+    html += `
+                    <div class="section-card collapsed" id="calCard">
+                        <div class="section-header toggle-header" onclick="toggleCalendar()">
+                            <div class="section-title">${currentMonth} Calendar</div>
+                            <div class="toggle-icon">▼</div>
                         </div>
-                        \${calendarHtml}
+                        <div id="calendarContent" class="collapsible-content" style="max-height: 0px">
+                            ${calendarHtml}
+                        </div>
                     </div>
-                \`;
-            }
+                `;
+}
 
-            // Charts
-            html += \`
+// Charts
+html += `
                 <div class="section-card">
                     <div class="section-header">
                         <div class="section-title">Spending Breakdown</div>
                     </div>
-                    \${hasCategories ? \`
+                    ${hasCategories ? `
                         <div class="chart-container">
                             <canvas id="expensesChart"></canvas>
                         </div>
@@ -755,7 +849,9 @@ const dashboardHTML = `
 
         function renderChart(categories) {
             const ctx = document.getElementById('expensesChart').getContext('2d');
-            const labels = []; const values = []; const colors = [];
+            const labels = [];
+            const values = [];
+            const colors = [];
             
             const catColors = {food: '#f59e0b', transport: '#3b82f6', shopping: '#ec4899', bills: '#ef4444', entertainment: '#8b5cf6', health: '#10b981', subscription: '#6366f1', other: '#64748b'};
 
@@ -770,6 +866,21 @@ const dashboardHTML = `
                 data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0, hoverOffset: 4 }] },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } }, cutout: '70%' }
             });
+        }
+        
+        function toggleCalendar() {
+            const content = document.getElementById('calendarContent');
+            const card = document.getElementById('calCard');
+            // Check formatted style or computed style
+            if(content.style.maxHeight === '0px') {
+                content.style.maxHeight = content.scrollHeight + 'px';
+                card.classList.remove('collapsed');
+                card.querySelector('.toggle-icon').style.transform = 'rotate(0deg)';
+            } else {
+                content.style.maxHeight = '0px';
+                card.classList.add('collapsed');
+                card.querySelector('.toggle-icon').style.transform = 'rotate(-90deg)';
+            }
         }
         
         // MODAL LOGIC
@@ -853,7 +964,7 @@ app.get('/api/dashboard', async (req, res) => {
         const userId = await validateToken(token);
         if (!userId) return res.status(401).json({ error: 'Invalid token' });
 
-        const [today, week, month, expenses, budget, categories, currency, daily] = await Promise.all([
+        const [today, week, month, expenses, budget, categories, currency, daily, lastMonth, yearly] = await Promise.all([
             getTodayTotal(userId),
             getWeeklyTotal(userId),
             getMonthlyTotal(userId),
@@ -861,7 +972,9 @@ app.get('/api/dashboard', async (req, res) => {
             getBudgetStatus(userId),
             getCategoryBreakdown(userId),
             getUserCurrency(userId),
-            getDailyBreakdown(userId)
+            getDailyBreakdown(userId),
+            getLastMonthTotal(userId),
+            getYearlyTotals(userId)
         ]);
 
         // Get user name
@@ -870,7 +983,12 @@ app.get('/api/dashboard', async (req, res) => {
         res.json({
             name: userRes.rows[0]?.name || 'User',
             currency,
-            today, week, month, expenses, budget, categories, daily
+            today, week, month, expenses, budget, categories, daily,
+            comparison: {
+                lastMonth,
+                thisYear: yearly.thisYear,
+                lastYear: yearly.lastYear
+            }
         });
     } catch (e) {
         console.error(e);
