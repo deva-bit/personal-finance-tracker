@@ -308,9 +308,9 @@ const dashboardHTML = `
                     <h1>💰 \${data.name}'s Expenses</h1>
                 </div>
                 <div class="stats">
-                    <div class="stat"><h3>Today</h3><div>$\${data.today.total.toFixed(0)}</div></div>
-                    <div class="stat"><h3>Week</h3><div>$\${data.week.total.toFixed(0)}</div></div>
-                    <div class="stat"><h3>Month</h3><div>$\${data.month.total.toFixed(0)}</div></div>
+                    <div class="stat"><h3>Today</h3><div>$\${data.today.total.toFixed(2)}</div></div>
+                    <div class="stat"><h3>Week</h3><div>$\${data.week.total.toFixed(2)}</div></div>
+                    <div class="stat"><h3>Month</h3><div>$\${data.month.total.toFixed(2)}</div></div>
                 </div>
                 <div class="card">
                     <h2>📋 Recent Activity</h2>
