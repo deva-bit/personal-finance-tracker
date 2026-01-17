@@ -231,6 +231,27 @@ async function getCategoryBreakdown(userId) {
     return breakdown;
 }
 
+async function getDailyBreakdown(userId) {
+    const res = await db.query(`
+        SELECT date::DATE as day, SUM(amount) as total
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
+        GROUP BY day
+    `, [userId]);
+
+    const breakdown = {};
+    res.rows.forEach(r => {
+        // Format date as YYYY-MM-DD (local time issues might exist, but usually safe for aggregation)
+        // PostgreSQL returns date objects, we convert to string YYYY-MM-DD
+        const d = new Date(r.day);
+        const key = d.toISOString().split('T')[0];
+        breakdown[key] = parseFloat(r.total);
+    });
+    return breakdown;
+}
+
 // ============== TOKEN MANAGEMENT ==============
 
 async function generateAccessToken(userId) {
@@ -389,6 +410,33 @@ const dashboardHTML = `
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .section-title { font-size: 1.1rem; font-weight: 600; }
         
+        /* Calendar */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            text-align: center;
+        }
+        .cal-day-header {
+            font-size: 0.75rem; color: var(--text-sub); margin-bottom: 8px; font-weight: 600;
+        }
+        .cal-day {
+            aspect-ratio: 1;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            border-radius: 12px;
+            background: rgba(51, 65, 85, 0.3);
+            font-size: 0.85rem;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cal-day.empty { background: transparent; cursor: default; }
+        .cal-day.today { border: 1px solid var(--accent); }
+        .cal-day.has-spend { background: rgba(59, 130, 246, 0.15); color: var(--text-main); }
+        .cal-day.high-spend { background: rgba(59, 130, 246, 0.3); font-weight: 700; }
+        .cal-amt { font-size: 0.65rem; color: var(--text-sub); margin-top: 2px; }
+        .cal-day.has-spend .cal-amt { color: var(--accent); }
+
         /* Budget */
         .budget-info { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; }
         .progress-track { background: #334155; height: 12px; border-radius: 6px; overflow: hidden; }
@@ -427,43 +475,27 @@ const dashboardHTML = `
         
         /* Floating Action Button */
         .fab {
-            position: fixed;
-            bottom: 33px;
-            right: 30px;
-            width: 56px;
-            height: 56px;
-            background: var(--accent);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-            cursor: pointer;
-            transition: transform 0.2s;
-            color: white;
-            z-index: 100;
+            position: fixed; bottom: 33px; right: 30px; width: 56px; height: 56px;
+            background: var(--accent); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            cursor: pointer; transition: transform 0.2s; color: white; z-index: 100;
         }
         .fab:hover { transform: scale(1.05); }
 
         /* Modal */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            display: flex; justify-content: center; align-items: flex-end; /* Mobile bottom sheet style */
-            z-index: 200;
-            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+            display: flex; justify-content: center; align-items: flex-end;
+            z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.3s;
         }
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
-        
         .modal {
-            background: var(--card-bg);
-            width: 100%; max-width: 500px;
-            border-radius: 20px 20px 0 0;
-            padding: 24px;
+            background: var(--card-bg); width: 100%; max-width: 500px;
+            border-radius: 20px 20px 0 0; padding: 24px;
             transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative; /* For close button positioning */
+            position: relative;
         }
         .modal-overlay.active .modal { transform: translateY(0); }
         @media(min-width: 500px) {
@@ -471,32 +503,21 @@ const dashboardHTML = `
             .modal { border-radius: 20px; transform: scale(0.9); transition: transform 0.2s; }
             .modal-overlay.active .modal { transform: scale(1); }
         }
-
         .form-group { margin-bottom: 16px; }
         .form-label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-sub); }
         .form-input, .form-select {
-            width: 100%; padding: 12px;
-            background: var(--input-bg);
-            border: 1px solid transparent;
-            border-radius: 12px;
-            color: var(--text-main);
-            font-family: inherit; font-size: 1rem;
-            outline: none;
+            width: 100%; padding: 12px; background: var(--input-bg);
+            border: 1px solid transparent; border-radius: 12px;
+            color: var(--text-main); font-family: inherit; font-size: 1rem; outline: none;
         }
         .form-input:focus { border-color: var(--accent); }
         .modal-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 20px; }
         .btn-primary {
-            width: 100%; padding: 14px;
-            background: var(--accent); color: white;
-            border: none; border-radius: 12px;
-            font-size: 1rem; font-weight: 600;
+            width: 100%; padding: 14px; background: var(--accent); color: white;
+            border: none; border-radius: 12px; font-size: 1rem; font-weight: 600;
             cursor: pointer; margin-top: 10px;
         }
-        .btn-close {
-            position: absolute; top: 24px; right: 24px;
-            background: none; border: none; color: var(--text-sub); font-size: 1.5rem; cursor: pointer;
-        }
-
+        .btn-close { position: absolute; top: 24px; right: 24px; background: none; border: none; color: var(--text-sub); font-size: 1.5rem; cursor: pointer; }
         .loading, .error { text-align: center; padding: 40px; color: var(--text-sub); }
         .error { color: var(--danger); }
         .empty-state { text-align: center; padding: 30px 0; color: var(--text-sub); font-size: 0.9rem; }
@@ -623,6 +644,67 @@ const dashboardHTML = `
                         </span>
                     </div>
                 </div>\`;
+            }
+
+            // Calendar
+            if (data.daily) {
+                const todayBtn = new Date();
+                const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
+                const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
+                const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); // 0 is Sunday
+                
+                let calendarHtml = \`<div class="calendar-grid">
+                    <div class="cal-day-header">S</div>
+                    <div class="cal-day-header">M</div>
+                    <div class="cal-day-header">T</div>
+                    <div class="cal-day-header">W</div>
+                    <div class="cal-day-header">T</div>
+                    <div class="cal-day-header">F</div>
+                    <div class="cal-day-header">S</div>
+                \`;
+
+                // Empty slots
+                for(let i=0; i<firstDay; i++) {
+                    calendarHtml += \`<div class="cal-day empty"></div>\`;
+                }
+
+                // Days
+                for(let d=1; d<=daysInMonth; d++) {
+                    // Create YYYY-MM-DD key (careful with timezone, simplistic approach here is safer with local strings)
+                    // We assume data.daily keys are local date strings from DB string
+                    // Let's rely on simple string match: if today is 2023-10-05, we look for 2023-10-05
+                    const dateObj = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), d);
+                    const dateKey = dateObj.toISOString().split('T')[0]; // UTC based, might shift.
+                    // Better: construct string manually to avoid timezone shift
+                    const Y = todayBtn.getFullYear();
+                    const M = String(todayBtn.getMonth()+1).padStart(2, '0');
+                    const D = String(d).padStart(2, '0');
+                    const localKey = \`\${Y}-\${M}-\${D}\`;
+
+                    const amount = data.daily[localKey] || 0;
+                    const isToday = d === todayBtn.getDate();
+                    
+                    let classes = 'cal-day';
+                    if (isToday) classes += ' today';
+                    if (amount > 0) classes += ' has-spend';
+                    if (amount > 100) classes += ' high-spend'; // Example threshold
+                    
+                    calendarHtml += \`
+                        <div class="\${classes}">
+                            \${d}
+                            \${amount > 0 ? \`<div class="cal-amt">\${Math.round(amount)}</div>\` : ''}
+                        </div>\`;
+                }
+                calendarHtml += '</div>';
+
+                html += \`
+                    <div class="section-card">
+                        <div class="section-header">
+                            <div class="section-title">\${currentMonth} Spending</div>
+                        </div>
+                        \${calendarHtml}
+                    </div>
+                \`;
             }
 
             // Charts
@@ -771,14 +853,15 @@ app.get('/api/dashboard', async (req, res) => {
         const userId = await validateToken(token);
         if (!userId) return res.status(401).json({ error: 'Invalid token' });
 
-        const [today, week, month, expenses, budget, categories, currency] = await Promise.all([
+        const [today, week, month, expenses, budget, categories, currency, daily] = await Promise.all([
             getTodayTotal(userId),
             getWeeklyTotal(userId),
             getMonthlyTotal(userId),
             getRecentExpenses(userId, 20),
             getBudgetStatus(userId),
             getCategoryBreakdown(userId),
-            getUserCurrency(userId)
+            getUserCurrency(userId),
+            getDailyBreakdown(userId)
         ]);
 
         // Get user name
@@ -787,7 +870,7 @@ app.get('/api/dashboard', async (req, res) => {
         res.json({
             name: userRes.rows[0]?.name || 'User',
             currency,
-            today, week, month, expenses, budget, categories
+            today, week, month, expenses, budget, categories, daily
         });
     } catch (e) {
         console.error(e);
