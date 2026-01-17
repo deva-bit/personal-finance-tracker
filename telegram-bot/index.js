@@ -150,6 +150,16 @@ async function getMonthlyTotal(userId) {
     return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
 }
 
+async function updateExpense(id, userId, description, amount, category) {
+    const res = await db.query(`
+        UPDATE telegram_expenses
+        SET description = $1, amount = $2, category = $3
+        WHERE id = $4 AND user_id = $5
+        RETURNING *
+    `, [description, amount, category, id, userId]);
+    return res.rows[0];
+}
+
 async function deleteLastExpense(userId) {
     const res = await db.query(`
         DELETE FROM telegram_expenses
@@ -292,6 +302,7 @@ const dashboardHTML = `
             --success: #22c55e;
             --danger: #ef4444;
             --warning: #eab308;
+            --input-bg: #334155;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { 
@@ -301,7 +312,7 @@ const dashboardHTML = `
             padding: 20px; 
             min-height: 100vh;
         }
-        .container { max-width: 600px; margin: 0 auto; padding-bottom: 40px; }
+        .container { max-width: 600px; margin: 0 auto; padding-bottom: 80px; }
         
         /* Header */
         .header { 
@@ -338,7 +349,7 @@ const dashboardHTML = `
         .stat-value { font-size: 1.1rem; font-weight: 700; color: var(--text-main); }
         .stat-card.today .stat-value { color: var(--accent); }
 
-        /* Budget Section */
+        /* Generic Cards */
         .section-card {
             background: var(--card-bg);
             border-radius: 20px;
@@ -349,6 +360,7 @@ const dashboardHTML = `
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .section-title { font-size: 1.1rem; font-weight: 600; }
         
+        /* Budget */
         .budget-info { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; }
         .progress-track { background: #334155; height: 12px; border-radius: 6px; overflow: hidden; }
         .progress-fill { height: 100%; transition: width 1s ease; border-radius: 6px; }
@@ -377,75 +389,152 @@ const dashboardHTML = `
         }
         .expense-details h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
         .expense-details p { font-size: 0.75rem; color: var(--text-sub); }
-        .expense-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .expense-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
         .expense-amount { font-weight: 600; font-size: 1rem; color: var(--text-main); }
-        .delete-btn { display: inline-block; font-size: 0.75rem; color: var(--danger); opacity: 0.6; cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0;}
-        .delete-btn:hover { opacity: 1; }
+        .actions { display: flex; gap: 10px; }
+        .action-btn { font-size: 0.75rem; color: var(--text-sub); cursor: pointer; background: none; border: none; padding: 0; }
+        .action-btn.edit { color: var(--accent); }
+        .action-btn.delete { color: var(--danger); }
         
+        /* Floating Action Button */
+        .fab {
+            position: fixed;
+            bottom: 33px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: white;
+            z-index: 100;
+        }
+        .fab:hover { transform: scale(1.05); }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex; justify-content: center; align-items: flex-end; /* Mobile bottom sheet style */
+            z-index: 200;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .modal {
+            background: var(--card-bg);
+            width: 100%; max-width: 500px;
+            border-radius: 20px 20px 0 0;
+            padding: 24px;
+            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative; /* For close button positioning */
+        }
+        .modal-overlay.active .modal { transform: translateY(0); }
+        @media(min-width: 500px) {
+            .modal-overlay { align-items: center; }
+            .modal { border-radius: 20px; transform: scale(0.9); transition: transform 0.2s; }
+            .modal-overlay.active .modal { transform: scale(1); }
+        }
+
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-sub); }
+        .form-input, .form-select {
+            width: 100%; padding: 12px;
+            background: var(--input-bg);
+            border: 1px solid transparent;
+            border-radius: 12px;
+            color: var(--text-main);
+            font-family: inherit; font-size: 1rem;
+            outline: none;
+        }
+        .form-input:focus { border-color: var(--accent); }
+        .modal-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 20px; }
+        .btn-primary {
+            width: 100%; padding: 14px;
+            background: var(--accent); color: white;
+            border: none; border-radius: 12px;
+            font-size: 1rem; font-weight: 600;
+            cursor: pointer; margin-top: 10px;
+        }
+        .btn-close {
+            position: absolute; top: 24px; right: 24px;
+            background: none; border: none; color: var(--text-sub); font-size: 1.5rem; cursor: pointer;
+        }
+
         .loading, .error { text-align: center; padding: 40px; color: var(--text-sub); }
         .error { color: var(--danger); }
-        
         .empty-state { text-align: center; padding: 30px 0; color: var(--text-sub); font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div id="app" class="container">
-        <div class="loading">
-            <h2>💰 Loading...</h2>
+        <div class="loading"><h2>💰 Loading...</h2></div>
+    </div>
+
+    <!-- ADD/EDIT MODAL -->
+    <div class="modal-overlay" id="expenseModal">
+        <div class="modal">
+            <button class="btn-close" onclick="closeModal()">×</button>
+            <h2 class="modal-title" id="modalTitle">Add Expense</h2>
+            <form id="expenseForm" onsubmit="handleFormSubmit(event)">
+                <input type="hidden" id="expenseId">
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <input type="text" id="descInput" class="form-input" placeholder="e.g., Lunch" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Amount</label>
+                    <input type="number" id="amountInput" class="form-input" step="0.01" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <select id="catInput" class="form-select">
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary" id="modalBtn">Save Expense</button>
+            </form>
         </div>
     </div>
 
+    <div class="fab" onclick="openAddModal()">+</div>
+
     <script>
         const emojis = ${JSON.stringify(CATEGORIES)};
-        const catColors = {
-            food: '#f59e0b',       // Amber
-            transport: '#3b82f6',  // Blue
-            shopping: '#ec4899',   // Pink
-            bills: '#ef4444',      // Red
-            entertainment: '#8b5cf6', // Violet
-            health: '#10b981',     // Emerald
-            subscription: '#6366f1', // Indigo
-            other: '#64748b'       // Slate
-        };
-
+        const categoriesList = Object.keys(emojis);
         let currentToken = '';
+        let currentData = null;
+
+        // Populate Categories
+        const catSelect = document.getElementById('catInput');
+        categoriesList.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+            catSelect.appendChild(opt);
+        });
 
         async function load() {
             currentToken = new URLSearchParams(window.location.search).get('token');
-            if(!currentToken) return showError('Link expired or invalid. Send $ to bot again.');
+            if(!currentToken) return showError('Link expired. Return to Telegram.');
             
             try {
                 const res = await fetch('/api/dashboard?token=' + currentToken);
                 if(!res.ok) throw new Error('Refresh link via Telegram ($)');
-                const data = await res.json();
-                render(data);
+                currentData = await res.json();
+                render(currentData);
             } catch(e) {
                 showError(e.message);
             }
         }
-        
-        async function deleteExpense(id) {
-            if(!confirm('Are you sure you want to delete this expense?')) return;
-            try {
-                const res = await fetch('/api/expenses/' + id + '?token=' + currentToken, { method: 'DELETE' });
-                if(res.ok) {
-                    load(); // Reload data
-                } else {
-                    alert('Failed to delete');
-                }
-            } catch(e) {
-                alert('Error: ' + e.message);
-            }
-        }
-        
-        function showError(msg) {
-            document.getElementById('app').innerHTML = \`
-                <div class="error">
-                    <h3>❌ Access Denied</h3>
-                    <p style="margin-top:10px">\${msg}</p>
-                </div>\`;
-        }
-        
+
         function render(data) {
             const cur = data.currency || '$';
             const budgetPercent = data.budget.budget > 0 
@@ -459,7 +548,10 @@ const dashboardHTML = `
             const hasExpenses = data.expenses.length > 0;
             const hasCategories = Object.keys(data.categories).length > 0;
 
-            const html = \`
+            let html = '';
+            
+            // Header
+            html += \`
                 <div class="header">
                     <h1>Hi, \${data.name.split(' ')[0]} 👋</h1>
                     <span class="badge">\${cur}</span>
@@ -478,9 +570,11 @@ const dashboardHTML = `
                         <div class="stat-label">MONTH</div>
                         <div class="stat-value">\${cur}\${data.month.total.toFixed(2)}</div>
                     </div>
-                </div>
+                </div>\`;
 
-                \${data.budget.budget > 0 ? \`
+            // Budget
+            if (data.budget.budget > 0) {
+                html += \`
                 <div class="section-card">
                     <div class="section-header" style="margin-bottom:12px">
                         <div class="section-title">Monthly Budget</div>
@@ -499,9 +593,11 @@ const dashboardHTML = `
                             \${cur}\${Math.abs(data.budget.remaining).toFixed(2)}
                         </span>
                     </div>
-                </div>
-                \` : ''}
+                </div>\`;
+            }
 
+            // Charts
+            html += \`
                 <div class="section-card">
                     <div class="section-header">
                         <div class="section-title">Spending Breakdown</div>
@@ -511,8 +607,10 @@ const dashboardHTML = `
                             <canvas id="expensesChart"></canvas>
                         </div>
                     \` : '<div class="empty-state">No data this month yet 📉</div>'}
-                </div>
+                </div>\`;
 
+            // Recent Activity
+            html += \`
                 <div class="section-card">
                     <div class="section-header">
                         <div class="section-title">Recent Activity</div>
@@ -529,69 +627,105 @@ const dashboardHTML = `
                                 </div>
                                 <div class="expense-right">
                                     <div class="expense-amount">-\${cur}\${parseFloat(e.amount).toFixed(2)}</div>
-                                    <button class="delete-btn" onclick="deleteExpense(\${e.id})">Delete</button>
+                                    <div class="actions">
+                                        <button class="action-btn edit" onclick="openEditModal(\${e.id})">Edit</button>
+                                        <button class="action-btn delete" onclick="deleteExpense(\${e.id})">Delete</button>
+                                    </div>
                                 </div>
                             </div>
                         \`).join('') : '<div class="empty-state">No transactions yet 🎉</div>'}
                     </div>
-                </div>
-            \`;
+                </div>\`;
             
             document.getElementById('app').innerHTML = html;
 
-            // Draw Chart if we have data
-            if (hasCategories) {
-                renderChart(data.categories);
-            }
+            if (hasCategories) renderChart(data.categories);
         }
 
         function renderChart(categories) {
             const ctx = document.getElementById('expensesChart').getContext('2d');
+            const labels = []; const values = []; const colors = [];
             
-            // Filter out zero values and sort
-            const labels = [];
-            const values = [];
-            const colors = [];
-            
-            Object.entries(categories)
-                .filter(([, val]) => val > 0)
-                .sort(([, a], [, b]) => b - a)
-                .forEach(([cat, val]) => {
-                    labels.push(cat.charAt(0).toUpperCase() + cat.slice(1));
-                    values.push(val);
-                    colors.push(catColors[cat] || '#cbd5e1');
-                });
+            const catColors = {food: '#f59e0b', transport: '#3b82f6', shopping: '#ec4899', bills: '#ef4444', entertainment: '#8b5cf6', health: '#10b981', subscription: '#6366f1', other: '#64748b'};
 
-            new Chart(ctx, {
+            Object.entries(categories).filter(([, val]) => val > 0).sort(([, a], [, b]) => b - a).forEach(([cat, val]) => {
+                    labels.push(cat.charAt(0).toUpperCase() + cat.slice(1));
+                    values.push(val); colors.push(catColors[cat] || '#cbd5e1');
+            });
+
+            if(window.myChart) window.myChart.destroy();
+            window.myChart = new Chart(ctx, {
                 type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: values,
-                        backgroundColor: colors,
-                        borderWidth: 0,
-                        hoverOffset: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: '#94a3b8',
-                                font: { size: 11, family: 'Outfit' },
-                                boxWidth: 10,
-                                padding: 15
-                            }
-                        }
-                    },
-                    cutout: '70%'
-                }
+                data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0, hoverOffset: 4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } }, cutout: '70%' }
             });
         }
         
+        // MODAL LOGIC
+        function openAddModal() {
+            document.getElementById('modalTitle').innerText = 'Add Expense';
+            document.getElementById('modalBtn').innerText = 'Add Expense';
+            document.getElementById('expenseId').value = '';
+            document.getElementById('descInput').value = '';
+            document.getElementById('amountInput').value = '';
+            document.getElementById('catInput').value = 'food';
+            document.getElementById('expenseModal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            const exp = currentData.expenses.find(e => e.id == id);
+            if(!exp) return;
+            document.getElementById('modalTitle').innerText = 'Edit Expense';
+            document.getElementById('modalBtn').innerText = 'Save Changes';
+            document.getElementById('expenseId').value = exp.id;
+            document.getElementById('descInput').value = exp.description;
+            document.getElementById('amountInput').value = exp.amount;
+            document.getElementById('catInput').value = exp.category;
+            document.getElementById('expenseModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('expenseModal').classList.remove('active');
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('expenseId').value;
+            const desc = document.getElementById('descInput').value;
+            const amount = document.getElementById('amountInput').value;
+            const category = document.getElementById('catInput').value;
+
+            const url = id ? ('/api/expenses/' + id) : '/api/expenses';
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const res = await fetch(url + '?token=' + currentToken, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description: desc, amount: amount, category: category })
+                });
+                
+                if(res.ok) {
+                    closeModal();
+                    load();
+                } else {
+                    alert('Error saving expense');
+                }
+            } catch(e) {
+                alert('Connection error');
+            }
+        }
+
+        async function deleteExpense(id) {
+            if(!confirm('Delete this expense?')) return;
+            try {
+                await fetch('/api/expenses/' + id + '?token=' + currentToken, { method: 'DELETE' });
+                load();
+            } catch(e) { alert('Error deleting'); }
+        }
+        
+        function showError(msg) { document.getElementById('app').innerHTML = `< div class="error" ><h3>❌ Error</h3><p>${msg}</p></div > `; }
+
         load();
     </script>
 </body>
@@ -628,6 +762,43 @@ app.get('/api/dashboard', async (req, res) => {
         });
     } catch (e) {
         console.error(e);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// NEW ROUTES 
+app.post('/api/expenses', async (req, res) => {
+    const token = req.query.token;
+    const { description, amount, category } = req.body;
+
+    if (!token) return res.status(401).json({ error: 'Missing token' });
+
+    try {
+        const userId = await validateToken(token);
+        if (!userId) return res.status(401).json({ error: 'Invalid token' });
+
+        const expense = await addExpense(userId, description, amount, category || 'other');
+        res.json(expense);
+    } catch (e) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.put('/api/expenses/:id', async (req, res) => {
+    const token = req.query.token;
+    const { id } = req.params;
+    const { description, amount, category } = req.body;
+
+    if (!token) return res.status(401).json({ error: 'Missing token' });
+
+    try {
+        const userId = await validateToken(token);
+        if (!userId) return res.status(401).json({ error: 'Invalid token' });
+
+        const expense = await updateExpense(id, userId, description, amount, category);
+        if (!expense) return res.status(404).json({ error: 'Not found' });
+        res.json(expense);
+    } catch (e) {
         res.status(500).json({ error: 'Server error' });
     }
 });
