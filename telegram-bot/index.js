@@ -156,14 +156,18 @@ async function getWeeklyTotal(userId) {
     return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
 }
 
-async function getMonthlyTotal(userId) {
+async function getMonthlyTotal(userId, year, month) {
+    const d = new Date();
+    const y = year || d.getFullYear();
+    const m = month || (d.getMonth() + 1);
+
     const res = await db.query(`
         SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count 
         FROM telegram_expenses 
         WHERE user_id = $1 
-        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
-    `, [userId]);
+        AND EXTRACT(MONTH FROM date) = $3
+        AND EXTRACT(YEAR FROM date) = $2
+    `, [userId, y, m]);
     return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
 }
 
@@ -203,10 +207,10 @@ async function setBudget(userId, amount) {
     await db.query(`UPDATE telegram_users SET budget = $1 WHERE user_id = $2`, [amount, userId]);
 }
 
-async function getBudgetStatus(userId) {
+async function getBudgetStatus(userId, year, month) {
     const userRes = await db.query(`SELECT budget FROM telegram_users WHERE user_id = $1`, [userId]);
     const budget = parseFloat(userRes.rows[0]?.budget || 0);
-    const monthly = await getMonthlyTotal(userId);
+    const monthly = await getMonthlyTotal(userId, year, month);
 
     return {
         budget,
@@ -216,14 +220,19 @@ async function getBudgetStatus(userId) {
     };
 }
 
-async function getCategoryBreakdown(userId) {
+async function getCategoryBreakdown(userId, year, month) {
+    const d = new Date();
+    const y = year || d.getFullYear();
+    const m = month || (d.getMonth() + 1);
+
     const res = await db.query(`
         SELECT category, SUM(amount) as total
         FROM telegram_expenses 
         WHERE user_id = $1 
-        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(MONTH FROM date) = $3
+        AND EXTRACT(YEAR FROM date) = $2
         GROUP BY category
-    `, [userId]);
+    `, [userId, y, m]);
 
     const breakdown = {};
     VALID_CATEGORIES.forEach(c => breakdown[c] = 0);
@@ -231,20 +240,22 @@ async function getCategoryBreakdown(userId) {
     return breakdown;
 }
 
-async function getDailyBreakdown(userId) {
+async function getDailyBreakdown(userId, year, month) {
+    const d = new Date();
+    const y = year || d.getFullYear();
+    const m = month || (d.getMonth() + 1);
+
     const res = await db.query(`
         SELECT date::DATE as day, SUM(amount) as total
         FROM telegram_expenses 
         WHERE user_id = $1 
-        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
+        AND EXTRACT(MONTH FROM date) = $3
+        AND EXTRACT(YEAR FROM date) = $2
         GROUP BY day
-    `, [userId]);
+    `, [userId, y, m]);
 
     const breakdown = {};
     res.rows.forEach(r => {
-        // Format date as YYYY-MM-DD (local time issues might exist, but usually safe for aggregation)
-        // PostgreSQL returns date objects, we convert to string YYYY-MM-DD
         const d = new Date(r.day);
         const key = d.toISOString().split('T')[0];
         breakdown[key] = parseFloat(r.total);
@@ -252,14 +263,19 @@ async function getDailyBreakdown(userId) {
     return breakdown;
 }
 
-async function getLastMonthTotal(userId) {
+async function getLastMonthTotal(userId, year, month) {
+    const d = new Date();
+    const y = year || d.getFullYear();
+    const m = month || (d.getMonth() + 1);
+    const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+
     const res = await db.query(`
         SELECT COALESCE(SUM(amount), 0) as total
         FROM telegram_expenses 
         WHERE user_id = $1 
-        AND date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')
-        AND date < date_trunc('month', CURRENT_DATE)
-    `, [userId]);
+        AND date >= date_trunc('month', $2::DATE - INTERVAL '1 month')
+        AND date < date_trunc('month', $2::DATE)
+    `, [userId, monthStart]);
     return parseFloat(res.rows[0].total);
 }
 
@@ -618,6 +634,13 @@ const dashboardHTML = `
         const categoriesList = Object.keys(emojis);
         let currentToken = '';
         let currentData = null;
+        let currentYearVal = new Date().getFullYear();
+        let currentMonthIdx = new Date().getMonth();
+
+        function changeMonth(offset) {
+            const d = new Date(currentYearVal, currentMonthIdx + offset, 1);
+            load(d.getFullYear(), d.getMonth() + 1);
+        }
 
         // Populate Categories
         const catSelect = document.getElementById('catInput');
@@ -628,14 +651,23 @@ const dashboardHTML = `
             catSelect.appendChild(opt);
         });
 
-        async function load() {
+        async function load(year, month) {
             currentToken = new URLSearchParams(window.location.search).get('token');
             if(!currentToken) return showError('Link expired. Return to Telegram.');
             
+            let url = '/api/dashboard?token=' + currentToken;
+            if(year && month) url += '&year=' + year + '&month=' + month;
+
             try {
-                const res = await fetch('/api/dashboard?token=' + currentToken);
+                const res = await fetch(url);
                 if(!res.ok) throw new Error('Refresh link via Telegram ($)');
                 currentData = await res.json();
+                
+                if(currentData.year) {
+                    currentYearVal = currentData.year;
+                    currentMonthIdx = currentData.month - 1;
+                }
+
                 render(currentData);
             } catch(e) {
                 showError(e.message);
@@ -710,11 +742,15 @@ const dashboardHTML = `
             }
 
             // Calendar
+            // Calendar
             if (data.daily) {
-                const todayBtn = new Date();
+                const Y = data.year || new Date().getFullYear();
+                const M = data.month ? (data.month - 1) : new Date().getMonth();
+                const todayBtn = new Date(Y, M, 1);
+                
                 const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
-                const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
-                const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); 
+                const daysInMonth = new Date(Y, M + 1, 0).getDate();
+                const firstDay = new Date(Y, M, 1).getDay(); 
                 
                 let calendarHtml = '<div class="calendar-grid">';
                 calendarHtml += '<div class="cal-day-header">S</div><div class="cal-day-header">M</div><div class="cal-day-header">T</div><div class="cal-day-header">W</div><div class="cal-day-header">T</div><div class="cal-day-header">F</div><div class="cal-day-header">S</div>';
@@ -724,13 +760,15 @@ const dashboardHTML = `
                 }
 
                 for(let d=1; d<=daysInMonth; d++) {
-                    const Y = todayBtn.getFullYear();
-                    const M = String(todayBtn.getMonth()+1).padStart(2, '0');
-                    const D = String(d).padStart(2, '0');
-                    const localKey = Y + '-' + M + '-' + D;
+                    const dY = Y;
+                    const dM = String(M+1).padStart(2, '0');
+                    const dD = String(d).padStart(2, '0');
+                    const localKey = dY + '-' + dM + '-' + dD;
 
                     const amount = data.daily[localKey] || 0;
-                    const isToday = d === todayBtn.getDate();
+                    
+                    const realToday = new Date();
+                    const isToday = (d === realToday.getDate() && M === realToday.getMonth() && Y === realToday.getFullYear());
                     
                     let classes = 'cal-day';
                     if (isToday) classes += ' today';
@@ -741,9 +779,27 @@ const dashboardHTML = `
                 }
                 calendarHtml += '</div>';
 
-                html += '<div class="section-card collapsed" id="calCard">';
-                html += '<div class="section-header toggle-header" onclick="toggleCalendar()"><div class="section-title">' + currentMonth + ' Calendar</div><div class="toggle-icon">▼</div></div>';
-                html += '<div id="calendarContent" class="collapsible-content" style="max-height: 0px">' + calendarHtml + '</div>';
+                const isCurrentMonth = (Y === new Date().getFullYear() && M === new Date().getMonth());
+                const collapseClass = isCurrentMonth ? 'collapsed' : '';
+                const contentStyle = isCurrentMonth ? 'max-height: 0px' : 'max-height: 500px'; // Auto-expand for history views
+                
+                html += '<div class="section-card ' + collapseClass + '" id="calCard">';
+                
+                // Header with Navigation
+                html += '<div class="section-header toggle-header" style="cursor:default; display:flex; align-items:center; justify-content:space-between">';
+                
+                // Nav Controls
+                html += '<div style="display:flex; align-items:center; gap:8px; flex:1">';
+                html += '<div onclick="changeMonth(-1); event.stopPropagation()" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">‹</div>';
+                html += '<div class="section-title" onclick="toggleCalendar()" style="flex:1; text-align:center; cursor:pointer; user-select:none">' + currentMonth + ' ' + Y + '</div>';
+                html += '<div onclick="changeMonth(1); event.stopPropagation()" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">›</div>';
+                html += '</div>';
+
+                // Collapse Icon
+                html += '<div class="toggle-icon" onclick="toggleCalendar()" style="margin-left:12px; cursor:pointer">▼</div>';
+                html += '</div>'; // End Header
+                
+                html += '<div id="calendarContent" class="collapsible-content" style="' + contentStyle + '">' + calendarHtml + '</div>';
                 html += '</div>';
             }
 
@@ -892,6 +948,9 @@ app.get('/', (req, res) => res.send(dashboardHTML));
 
 app.get('/api/dashboard', async (req, res) => {
     const token = req.query.token;
+    const yearParams = req.query.year ? parseInt(req.query.year) : undefined;
+    const monthParams = req.query.month ? parseInt(req.query.month) : undefined;
+
     if (!token) return res.status(401).json({ error: 'Missing token' });
 
     try {
@@ -901,14 +960,14 @@ app.get('/api/dashboard', async (req, res) => {
         const [today, week, month, expenses, budget, categories, currency, daily, lastMonth, yearly] = await Promise.all([
             getTodayTotal(userId),
             getWeeklyTotal(userId),
-            getMonthlyTotal(userId),
+            getMonthlyTotal(userId, yearParams, monthParams),
             getRecentExpenses(userId, 20),
-            getBudgetStatus(userId),
-            getCategoryBreakdown(userId),
+            getBudgetStatus(userId, yearParams, monthParams),
+            getCategoryBreakdown(userId, yearParams, monthParams),
             getUserCurrency(userId),
-            getDailyBreakdown(userId),
-            getLastMonthTotal(userId),
-            getYearlyTotals(userId)
+            getDailyBreakdown(userId, yearParams, monthParams),
+            getLastMonthTotal(userId, yearParams, monthParams),
+            getYearlyTotals(userId, yearParams)
         ]);
 
         // Get user name
@@ -918,6 +977,8 @@ app.get('/api/dashboard', async (req, res) => {
             name: userRes.rows[0]?.name || 'User',
             currency,
             today, week, month, expenses, budget, categories, daily,
+            year: yearParams || new Date().getFullYear(),
+            month: monthParams || (new Date().getMonth() + 1),
             comparison: {
                 lastMonth,
                 thisYear: yearly.thisYear,
