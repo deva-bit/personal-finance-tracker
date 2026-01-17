@@ -377,7 +377,10 @@ const dashboardHTML = `
         }
         .expense-details h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
         .expense-details p { font-size: 0.75rem; color: var(--text-sub); }
+        .expense-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
         .expense-amount { font-weight: 600; font-size: 1rem; color: var(--text-main); }
+        .delete-btn { display: inline-block; font-size: 0.75rem; color: var(--danger); opacity: 0.6; cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0;}
+        .delete-btn:hover { opacity: 1; }
         
         .loading, .error { text-align: center; padding: 40px; color: var(--text-sub); }
         .error { color: var(--danger); }
@@ -405,17 +408,33 @@ const dashboardHTML = `
             other: '#64748b'       // Slate
         };
 
+        let currentToken = '';
+
         async function load() {
-            const token = new URLSearchParams(window.location.search).get('token');
-            if(!token) return showError('Link expired or invalid. Send $ to bot again.');
+            currentToken = new URLSearchParams(window.location.search).get('token');
+            if(!currentToken) return showError('Link expired or invalid. Send $ to bot again.');
             
             try {
-                const res = await fetch('/api/dashboard?token=' + token);
+                const res = await fetch('/api/dashboard?token=' + currentToken);
                 if(!res.ok) throw new Error('Refresh link via Telegram ($)');
                 const data = await res.json();
                 render(data);
             } catch(e) {
                 showError(e.message);
+            }
+        }
+        
+        async function deleteExpense(id) {
+            if(!confirm('Are you sure you want to delete this expense?')) return;
+            try {
+                const res = await fetch('/api/expenses/' + id + '?token=' + currentToken, { method: 'DELETE' });
+                if(res.ok) {
+                    load(); // Reload data
+                } else {
+                    alert('Failed to delete');
+                }
+            } catch(e) {
+                alert('Error: ' + e.message);
             }
         }
         
@@ -440,7 +459,7 @@ const dashboardHTML = `
             const hasExpenses = data.expenses.length > 0;
             const hasCategories = Object.keys(data.categories).length > 0;
 
-            document.getElementById('app').innerHTML = \`
+            const html = \`
                 <div class="header">
                     <h1>Hi, \${data.name.split(' ')[0]} 👋</h1>
                     <span class="badge">\${cur}</span>
@@ -508,12 +527,17 @@ const dashboardHTML = `
                                         <p>\${new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric'})} • \${e.category}</p>
                                     </div>
                                 </div>
-                                <div class="expense-amount">-\${cur}\${parseFloat(e.amount).toFixed(2)}</div>
+                                <div class="expense-right">
+                                    <div class="expense-amount">-\${cur}\${parseFloat(e.amount).toFixed(2)}</div>
+                                    <button class="delete-btn" onclick="deleteExpense(\${e.id})">Delete</button>
+                                </div>
                             </div>
                         \`).join('') : '<div class="empty-state">No transactions yet 🎉</div>'}
                     </div>
                 </div>
             \`;
+            
+            document.getElementById('app').innerHTML = html;
 
             // Draw Chart if we have data
             if (hasCategories) {
@@ -602,6 +626,30 @@ app.get('/api/dashboard', async (req, res) => {
             currency,
             today, week, month, expenses, budget, categories
         });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.delete('/api/expenses/:id', async (req, res) => {
+    const token = req.query.token;
+    const expenseId = req.params.id;
+
+    if (!token) return res.status(401).json({ error: 'Missing token' });
+
+    try {
+        const userId = await validateToken(token);
+        if (!userId) return res.status(401).json({ error: 'Invalid token' });
+
+        // Delete only if expense belongs to user
+        const result = await db.query('DELETE FROM telegram_expenses WHERE id = $1 AND user_id = $2 RETURNING *', [expenseId, userId]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Expense not found or unauthorized' });
+        }
+
+        res.json({ success: true, deleted: result.rows[0] });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Server error' });
