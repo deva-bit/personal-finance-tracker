@@ -686,7 +686,6 @@ if (data.comparison) {
     const mDiff = data.month.total - comp.lastMonth;
     const mTrend = mDiff > 0 ? 'trend-up' : 'trend-down';
     const mSign = mDiff > 0 ? '+' : '';
-
     const yDiff = comp.thisYear - comp.lastYear;
     const yTrend = yDiff > 0 ? 'trend-up' : 'trend-down';
     const ySign = yDiff > 0 ? '+' : '';
