@@ -1,47 +1,213 @@
 const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
 const { Client } = require('pg');
-const axios = require('axios');
 
-// Configuration
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const DATABASE_URL = process.env.DATABASE_URL;
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://expense-dashboard-0fto.onrender.com';
+// ============== CONFIGURATION ==============
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN; // Required on Render
+const DATABASE_URL = process.env.DATABASE_URL;    // Required on Render
+const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 
-// Valid categories
-const VALID_CATEGORIES = ['food', 'transport', 'shopping', 'bills', 'entertainment', 'health', 'subscription', 'other'];
+// Valid categories with emojis
+const CATEGORIES = {
+    'food': '🍔',
+    'transport': '🚗',
+    'shopping': '🛒',
+    'bills': '💡',
+    'entertainment': '🎬',
+    'health': '💊',
+    'subscription': '📺',
+    'other': '📦'
+};
 
-// Auto-categorization for common items
+const VALID_CATEGORIES = Object.keys(CATEGORIES);
+
+// Auto-categorization
 const AUTO_CATEGORIES = {
-    // Food & Drinks
     'coffee': 'food', 'kopi': 'food', 'teh': 'food', 'lunch': 'food', 'dinner': 'food',
     'breakfast': 'food', 'brunch': 'food', 'supper': 'food', 'snack': 'food', 'bubble tea': 'food',
     'bbt': 'food', 'makan': 'food', 'food': 'food', 'eat': 'food', 'meal': 'food',
-    'hawker': 'food', 'kopitiam': 'food', 'foodcourt': 'food', 'restaurant': 'food',
-    'mcdonalds': 'food', 'mcd': 'food', 'kfc': 'food', 'subway': 'food', 'starbucks': 'food',
-    'nasi': 'food', 'mee': 'food', 'rice': 'food', 'chicken': 'food',
-    // Transport
+    'hawker': 'food', 'kopitiam': 'food', 'restaurant': 'food', 'mcdonalds': 'food', 'mcd': 'food',
+    'kfc': 'food', 'subway': 'food', 'starbucks': 'food', 'pizza': 'food', 'nasi': 'food',
     'grab': 'transport', 'gojek': 'transport', 'uber': 'transport', 'taxi': 'transport',
     'mrt': 'transport', 'bus': 'transport', 'train': 'transport', 'petrol': 'transport',
     'fuel': 'transport', 'parking': 'transport', 'toll': 'transport',
-    // Shopping
-    'ntuc': 'shopping', 'fairprice': 'shopping', 'cold storage': 'shopping', 'giant': 'shopping',
-    'shopee': 'shopping', 'lazada': 'shopping', 'amazon': 'shopping', 'uniqlo': 'shopping',
-    'clothes': 'shopping', 'shoes': 'shopping', 'grocery': 'shopping',
-    // Bills
+    'ntuc': 'shopping', 'fairprice': 'shopping', 'giant': 'shopping', 'shopee': 'shopping',
+    'lazada': 'shopping', 'amazon': 'shopping', 'clothes': 'shopping', 'grocery': 'shopping',
     'electric': 'bills', 'electricity': 'bills', 'water': 'bills', 'gas': 'bills',
-    'phone': 'bills', 'mobile': 'bills', 'internet': 'bills', 'wifi': 'bills', 'rent': 'bills',
-    // Subscriptions
+    'phone': 'bills', 'mobile': 'bills', 'internet': 'bills', 'rent': 'bills',
     'netflix': 'subscription', 'spotify': 'subscription', 'youtube': 'subscription',
-    'disney': 'subscription', 'hbo': 'subscription', 'gym': 'subscription',
-    // Entertainment
-    'movie': 'entertainment', 'cinema': 'entertainment', 'concert': 'entertainment',
-    'karaoke': 'entertainment', 'game': 'entertainment',
-    // Health
-    'doctor': 'health', 'clinic': 'health', 'hospital': 'health', 'medicine': 'health',
-    'pharmacy': 'health', 'dental': 'health', 'vitamin': 'health'
+    'disney': 'subscription', 'gym': 'subscription', 'chatgpt': 'subscription',
+    'movie': 'entertainment', 'cinema': 'entertainment', 'karaoke': 'entertainment',
+    'doctor': 'health', 'clinic': 'health', 'medicine': 'health', 'pharmacy': 'health'
 };
 
-// Smart auto-categorize function
+// ============== DATABASE CONNECTION ==============
+
+const db = new Client({
+    connectionString: DATABASE_URL,
+    ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+});
+
+async function initDb() {
+    try {
+        await db.connect();
+        console.log('✅ Connected to database');
+
+        // Create tables if not exist
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS telegram_users (
+                user_id VARCHAR(50) PRIMARY KEY,
+                name VARCHAR(100),
+                budget DECIMAL(10,2) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE TABLE IF NOT EXISTS telegram_expenses (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) REFERENCES telegram_users(user_id),
+                description TEXT,
+                amount DECIMAL(10,2),
+                category VARCHAR(50),
+                date TIMESTAMP DEFAULT NOW()
+            );
+
+             CREATE TABLE IF NOT EXISTS dashboard_tokens (
+                token VARCHAR(100) PRIMARY KEY,
+                user_id VARCHAR(50) REFERENCES telegram_users(user_id),
+                expires_at TIMESTAMP
+            );
+        `);
+        console.log('✅ Database tables ready');
+    } catch (error) {
+        console.error('❌ Database connection error:', error.message);
+    }
+}
+
+// ============== DATA FUNCTIONS ==============
+
+async function ensureUser(userId, name) {
+    await db.query(`
+        INSERT INTO telegram_users (user_id, name) 
+        VALUES ($1, $2)
+        ON CONFLICT (user_id) DO UPDATE SET name = $2
+    `, [userId, name]);
+}
+
+async function addExpense(userId, description, amount, category) {
+    const res = await db.query(`
+        INSERT INTO telegram_expenses (user_id, description, amount, category, date)
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING *
+    `, [userId, description, amount, category]);
+    return res.rows[0];
+}
+
+async function getTodayTotal(userId) {
+    const res = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count 
+        FROM telegram_expenses 
+        WHERE user_id = $1 AND date::date = CURRENT_DATE
+    `, [userId]);
+    return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
+}
+
+async function getWeeklyTotal(userId) {
+    const res = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count 
+        FROM telegram_expenses 
+        WHERE user_id = $1 AND date >= CURRENT_DATE - INTERVAL '7 days'
+    `, [userId]);
+    return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
+}
+
+async function getMonthlyTotal(userId) {
+    const res = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count 
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
+    `, [userId]);
+    return { total: parseFloat(res.rows[0].total), count: parseInt(res.rows[0].count) };
+}
+
+async function deleteLastExpense(userId) {
+    const res = await db.query(`
+        DELETE FROM telegram_expenses
+        WHERE id = (
+            SELECT id FROM telegram_expenses 
+            WHERE user_id = $1 
+            ORDER BY date DESC LIMIT 1
+        )
+        RETURNING *
+    `, [userId]);
+    return res.rows[0];
+}
+
+async function getRecentExpenses(userId, limit = 10) {
+    const res = await db.query(`
+        SELECT * FROM telegram_expenses 
+        WHERE user_id = $1 
+        ORDER BY date DESC LIMIT $2
+    `, [userId, limit]);
+    return res.rows;
+}
+
+async function setBudget(userId, amount) {
+    await db.query(`UPDATE telegram_users SET budget = $1 WHERE user_id = $2`, [amount, userId]);
+}
+
+async function getBudgetStatus(userId) {
+    const userRes = await db.query(`SELECT budget FROM telegram_users WHERE user_id = $1`, [userId]);
+    const budget = parseFloat(userRes.rows[0]?.budget || 0);
+    const monthly = await getMonthlyTotal(userId);
+
+    return {
+        budget,
+        spent: monthly.total,
+        remaining: budget - monthly.total,
+        percentage: budget > 0 ? (monthly.total / budget * 100) : 0
+    };
+}
+
+async function getCategoryBreakdown(userId) {
+    const res = await db.query(`
+        SELECT category, SUM(amount) as total
+        FROM telegram_expenses 
+        WHERE user_id = $1 
+        AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        GROUP BY category
+    `, [userId]);
+
+    const breakdown = {};
+    VALID_CATEGORIES.forEach(c => breakdown[c] = 0);
+    res.rows.forEach(r => breakdown[r.category] = parseFloat(r.total));
+    return breakdown;
+}
+
+// ============== TOKEN MANAGEMENT ==============
+
+async function generateAccessToken(userId) {
+    const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    // Expires in 30 minutes
+    await db.query(`
+        INSERT INTO dashboard_tokens (token, user_id, expires_at)
+        VALUES ($1, $2, NOW() + INTERVAL '30 minutes')
+    `, [token, userId]);
+    return token;
+}
+
+async function validateToken(token) {
+    const res = await db.query(`
+        SELECT user_id FROM dashboard_tokens 
+        WHERE token = $1 AND expires_at > NOW()
+    `, [token]);
+    return res.rows[0]?.user_id;
+}
+
+// ============== HELPERS ==============
+
 function autoCategory(description) {
     const desc = description.toLowerCase();
     if (AUTO_CATEGORIES[desc]) return AUTO_CATEGORIES[desc];
@@ -51,312 +217,227 @@ function autoCategory(description) {
     return null;
 }
 
-// Create bot instance
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-
-console.log('🤖 Telegram Expense Bot starting...');
-
-// Database helper
-async function getDb() {
-    const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
-    await client.connect();
-    return client;
-}
-
-// ============== DATABASE FUNCTIONS ==============
-
-async function addExpense(telegramId, description, amount, category) {
-    const client = await getDb();
-    try {
-        await client.query(
-            `INSERT INTO expenses (phone_number, description, amount, category, date)
-             VALUES ($1, $2, $3, $4, NOW())`,
-            [telegramId.toString(), description, amount, category]
-        );
-        return true;
-    } finally {
-        await client.end();
-    }
-}
-
-async function getTodayTotal(telegramId) {
-    const client = await getDb();
-    try {
-        const result = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-             FROM expenses
-             WHERE phone_number = $1
-             AND date >= CURRENT_DATE`,
-            [telegramId.toString()]
-        );
-        return result.rows[0];
-    } finally {
-        await client.end();
-    }
-}
-
-async function getWeeklyTotal(telegramId) {
-    const client = await getDb();
-    try {
-        const result = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-             FROM expenses
-             WHERE phone_number = $1
-             AND date >= CURRENT_DATE - INTERVAL '7 days'`,
-            [telegramId.toString()]
-        );
-        return result.rows[0];
-    } finally {
-        await client.end();
-    }
-}
-
-async function getMonthlyTotal(telegramId) {
-    const client = await getDb();
-    try {
-        const result = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-             FROM expenses
-             WHERE phone_number = $1
-             AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE)
-             AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)`,
-            [telegramId.toString()]
-        );
-        return result.rows[0];
-    } finally {
-        await client.end();
-    }
-}
-
-async function deleteLastExpense(telegramId) {
-    const client = await getDb();
-    try {
-        const result = await client.query(
-            `DELETE FROM expenses
-             WHERE id = (
-                 SELECT id FROM expenses
-                 WHERE phone_number = $1
-                 ORDER BY date DESC, id DESC
-                 LIMIT 1
-             )
-             RETURNING description, amount`,
-            [telegramId.toString()]
-        );
-        return result.rows[0];
-    } finally {
-        await client.end();
-    }
-}
-
-async function getRecentExpenses(telegramId, limit = 5) {
-    const client = await getDb();
-    try {
-        const result = await client.query(
-            `SELECT description, amount, category, date
-             FROM expenses
-             WHERE phone_number = $1
-             ORDER BY date DESC, id DESC
-             LIMIT $2`,
-            [telegramId.toString(), limit]
-        );
-        return result.rows;
-    } finally {
-        await client.end();
-    }
-}
-
-// ============== PIN MANAGEMENT ==============
-
-const crypto = require('crypto');
-
-function hashPin(pin) {
-    return crypto.createHash('sha256').update(pin).digest('hex').substring(0, 16);
-}
-
-async function setUserPin(telegramId, pin) {
-    const client = await getDb();
-    try {
-        const hashedPin = hashPin(pin);
-        await client.query(
-            `INSERT INTO users (phone_number, pin)
-             VALUES ($1, $2)
-             ON CONFLICT (phone_number)
-             DO UPDATE SET pin = $2`,
-            [telegramId.toString(), hashedPin]
-        );
-        return true;
-    } finally {
-        await client.end();
-    }
-}
-
-// ============== DASHBOARD TOKEN ==============
-
-async function getDashboardToken(telegramId) {
-    try {
-        const response = await axios.post(`${DASHBOARD_URL}/api/create-access-token`, {
-            phone: telegramId.toString(),
-            secret: process.env.SHARED_SECRET || 'expense-tracker-2024'
-        });
-        return response.data.token;
-    } catch (error) {
-        console.error('Failed to get dashboard token:', error.message);
-        return null;
-    }
-}
-
-// ============== MESSAGE PARSING ==============
-
 function parseExpenseMessage(message) {
     const text = message.trim().toLowerCase();
 
-    // Shortcuts
     if (text === '?' || text === 'today') return { type: 'today' };
     if (text === '??' || text === 'week') return { type: 'week' };
-    if (text === 'month') return { type: 'month' };
+    if (text === '???' || text === 'month') return { type: 'month' };
     if (text === '$' || text === 'dashboard') return { type: 'dashboard' };
     if (text === '!' || text === 'delete' || text === 'undo') return { type: 'delete' };
     if (text === 'help' || text === '/help' || text === '/start') return { type: 'help' };
     if (text === 'recent' || text === 'history') return { type: 'recent' };
+    if (text === 'budget') return { type: 'budgetstatus' };
+    if (text === 'categories' || text === 'breakdown') return { type: 'breakdown' };
 
-    // PIN: "pin 1234"
-    const pinMatch = text.match(/^pin\s+(\d{4,})$/);
-    if (pinMatch) return { type: 'pin', pin: pinMatch[1] };
+    const budgetMatch = text.match(/^budget\s+(\d+\.?\d*)$/);
+    if (budgetMatch) return { type: 'setbudget', amount: parseFloat(budgetMatch[1]) };
 
-    // Expense: "coffee 5" or "coffee 5.50" or "food coffee 5"
-    // Pattern 1: "description amount" - e.g., "coffee 5"
     const simpleMatch = text.match(/^([a-z\s]+?)\s+(\d+\.?\d*)$/);
     if (simpleMatch) {
-        return {
-            type: 'add',
-            description: simpleMatch[1].trim(),
-            amount: parseFloat(simpleMatch[2]),
-            category: null // Will be auto-detected
-        };
+        return { type: 'add', description: simpleMatch[1].trim(), amount: parseFloat(simpleMatch[2]), category: null };
     }
 
-    // Pattern 2: "category description amount" - e.g., "food coffee 5"
     const fullMatch = text.match(/^([a-z]+)\s+([a-z\s]+?)\s+(\d+\.?\d*)$/);
     if (fullMatch && VALID_CATEGORIES.includes(fullMatch[1])) {
-        return {
-            type: 'add',
-            category: fullMatch[1],
-            description: fullMatch[2].trim(),
-            amount: parseFloat(fullMatch[3])
-        };
+        return { type: 'add', category: fullMatch[1], description: fullMatch[2].trim(), amount: parseFloat(fullMatch[3]) };
     }
 
     return { type: 'unknown' };
 }
 
-// ============== MESSAGE HANDLER ==============
+// ============== EXPRESS APP ==============
 
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const telegramId = msg.from.id;
-    const text = msg.text;
+const app = express();
+app.use(express.json());
 
-    if (!text) return;
+// Dashboard HTML
+const dashboardHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💰 Expense Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: #fff; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; padding: 20px; background: #1e293b; border-radius: 16px; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .stat { background: #1e293b; padding: 15px; border-radius: 12px; text-align: center; }
+        .stat h3 { color: #94a3b8; font-size: 0.8rem; margin-bottom: 5px; }
+        .stat div { font-size: 1.2rem; font-weight: 700; color: #4ade80; }
+        .card { background: #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+        .card h2 { font-size: 1.1rem; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .expense-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #334155; }
+        .expense-left { display: flex; align-items: center; gap: 12px; }
+        .expense-emoji { font-size: 1.2rem; background: #334155; padding: 8px; border-radius: 50%; }
+        .expense-amount { color: #f87171; font-weight: 600; }
+        .error { text-align: center; padding: 50px; background: #1e293b; border-radius: 16px; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="loading" style="text-align:center; padding: 50px;">Loading...</div>
+    </div>
+    <script>
+        const emojis = ${JSON.stringify(CATEGORIES)};
+        async function load() {
+            const token = new URLSearchParams(window.location.search).get('token');
+            if(!token) return showError('Missing access token. Please get a link from Telegram.');
+            
+            try {
+                const res = await fetch('/api/dashboard?token=' + token);
+                if(!res.ok) throw new Error('Invalid token');
+                const data = await res.json();
+                render(data);
+            } catch(e) {
+                showError(e.message);
+            }
+        }
+        
+        function showError(msg) {
+            document.getElementById('app').innerHTML = '<div class="error"><h3>❌ Access Denied</h3><p>' + msg + '</p></div>';
+        }
+        
+        function render(data) {
+            document.getElementById('app').innerHTML = \`
+                <div class="header">
+                    <h1>💰 \${data.name}'s Expenses</h1>
+                </div>
+                <div class="stats">
+                    <div class="stat"><h3>Today</h3><div>$\${data.today.total.toFixed(0)}</div></div>
+                    <div class="stat"><h3>Week</h3><div>$\${data.week.total.toFixed(0)}</div></div>
+                    <div class="stat"><h3>Month</h3><div>$\${data.month.total.toFixed(0)}</div></div>
+                </div>
+                <div class="card">
+                    <h2>📋 Recent Activity</h2>
+                    <div>\${data.expenses.map(e => \`
+                        <div class="expense-item">
+                            <div class="expense-left">
+                                <div class="expense-emoji">\${emojis[e.category] || '📦'}</div>
+                                <div>
+                                    <div style="font-weight:500">\${e.description}</div>
+                                    <div style="font-size:0.8rem;color:#94a3b8">\${new Date(e.date).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                            <div class="expense-amount">-$\${parseFloat(e.amount).toFixed(2)}</div>
+                        </div>
+                    \`).join('')}</div>
+                </div>
+            \`;
+        }
+        load();
+    </script>
+</body>
+</html>
+`;
 
-    console.log(`📩 [${telegramId}] ${text}`);
+app.get('/', (req, res) => res.send(dashboardHTML));
 
-    const parsed = parseExpenseMessage(text);
+app.get('/api/dashboard', async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.status(401).json({ error: 'Missing token' });
 
     try {
-        switch (parsed.type) {
-            case 'help':
-                const helpMessage = `
-💰 *Expense Tracker Bot*
+        const userId = await validateToken(token);
+        if (!userId) return res.status(401).json({ error: 'Invalid token' });
 
-*Quick Commands:*
-• \`coffee 5\` → Add expense
-• \`?\` → Today's total
-• \`??\` → This week
-• \`$\` → Dashboard link
-• \`!\` → Delete last
-• \`pin 1234\` → Set PIN
+        const [today, week, month, expenses] = await Promise.all([
+            getTodayTotal(userId),
+            getWeeklyTotal(userId),
+            getMonthlyTotal(userId),
+            getRecentExpenses(userId, 20)
+        ]);
 
-*Examples:*
-\`lunch 12.50\`
-\`grab 8\`
-\`shopping clothes 50\`
+        // Get user name
+        const userRes = await db.query('SELECT name FROM telegram_users WHERE user_id = $1', [userId]);
 
-*Categories:* food, transport, shopping, bills, entertainment, health, subscription, other
-
-Auto-detects: coffee, grab, mrt, netflix, etc.
-                `;
-                await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-                break;
-
-            case 'add':
-                let category = parsed.category;
-                if (!category) {
-                    category = autoCategory(parsed.description) || 'other';
-                }
-                await addExpense(telegramId, parsed.description, parsed.amount, category);
-                await bot.sendMessage(chatId, `✅ Added: ${parsed.description} - $${parsed.amount.toFixed(2)} (${category})`);
-                break;
-
-            case 'today':
-                const today = await getTodayTotal(telegramId);
-                await bot.sendMessage(chatId, `📊 *Today*\n💵 Total: $${parseFloat(today.total).toFixed(2)}\n📝 ${today.count} expenses`, { parse_mode: 'Markdown' });
-                break;
-
-            case 'week':
-                const week = await getWeeklyTotal(telegramId);
-                await bot.sendMessage(chatId, `📊 *This Week*\n💵 Total: $${parseFloat(week.total).toFixed(2)}\n📝 ${week.count} expenses`, { parse_mode: 'Markdown' });
-                break;
-
-            case 'month':
-                const month = await getMonthlyTotal(telegramId);
-                await bot.sendMessage(chatId, `📊 *This Month*\n💵 Total: $${parseFloat(month.total).toFixed(2)}\n📝 ${month.count} expenses`, { parse_mode: 'Markdown' });
-                break;
-
-            case 'delete':
-                const deleted = await deleteLastExpense(telegramId);
-                if (deleted) {
-                    await bot.sendMessage(chatId, `🗑️ Deleted: ${deleted.description} - $${parseFloat(deleted.amount).toFixed(2)}`);
-                } else {
-                    await bot.sendMessage(chatId, `❌ No expenses to delete`);
-                }
-                break;
-
-            case 'pin':
-                await setUserPin(telegramId, parsed.pin);
-                await bot.sendMessage(chatId, `🔒 PIN set successfully!`);
-                break;
-
-            case 'dashboard':
-                const token = await getDashboardToken(telegramId);
-                if (token) {
-                    await bot.sendMessage(chatId, `📊 *Your Dashboard*\n\n${DASHBOARD_URL}?token=${token}\n\n_Link valid for 30 minutes_`, { parse_mode: 'Markdown' });
-                } else {
-                    await bot.sendMessage(chatId, `❌ Failed to generate dashboard link. Try again.`);
-                }
-                break;
-
-            case 'recent':
-                const expenses = await getRecentExpenses(telegramId);
-                if (expenses.length === 0) {
-                    await bot.sendMessage(chatId, `📝 No recent expenses`);
-                } else {
-                    let list = '*Recent Expenses:*\n\n';
-                    expenses.forEach((e, i) => {
-                        const date = new Date(e.date).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' });
-                        list += `${i + 1}. ${e.description} - $${parseFloat(e.amount).toFixed(2)} (${e.category}) - ${date}\n`;
-                    });
-                    await bot.sendMessage(chatId, list, { parse_mode: 'Markdown' });
-                }
-                break;
-
-            case 'unknown':
-                await bot.sendMessage(chatId, `❓ I didn't understand that.\n\nTry: \`coffee 5\` or type \`help\``, { parse_mode: 'Markdown' });
-                break;
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+        res.json({
+            name: userRes.rows[0]?.name || 'User',
+            today, week, month, expenses
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-console.log('✅ Telegram Expense Bot is running!');
+// ============== TELEGRAM BOT ==============
+
+if (BOT_TOKEN) {
+    const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+
+    bot.on('message', async (msg) => {
+        const chatId = msg.chat.id;
+        try {
+            const userId = msg.from.id.toString();
+            const text = msg.text;
+            const firstName = msg.from.first_name || 'User';
+
+            if (!text) return;
+
+            // Ensure user exists
+            await ensureUser(userId, firstName);
+
+            const parsed = parseExpenseMessage(text);
+
+            switch (parsed.type) {
+                case 'help':
+                    await bot.sendMessage(chatId, `💰 *Expense Bot*\nAdd: \`coffee 5\`\nCheck: \`?\`, \`??\`, \`???\`\nDash: \`$\``, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'add':
+                    const cat = parsed.category || autoCategory(parsed.description) || 'other';
+                    await addExpense(userId, parsed.description, parsed.amount, cat);
+                    const today = await getTodayTotal(userId);
+                    await bot.sendMessage(chatId, `✅ Added: ${parsed.description} ($${parsed.amount})\n📊 Today: $${today.total.toFixed(2)}`);
+                    break;
+
+                case 'dashboard':
+                    const token = await generateAccessToken(userId);
+                    // Use Render URL if available, else localhost
+                    const url = `${BASE_URL}/?token=${token}`;
+                    await bot.sendMessage(chatId, `📊 *Dashboard Link:*\n${url}\n_(Valid for 30 mins)_`, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'today':
+                    const t = await getTodayTotal(userId);
+                    await bot.sendMessage(chatId, `📊 Today: $${t.total.toFixed(2)}`);
+                    break;
+
+                case 'week':
+                    const w = await getWeeklyTotal(userId);
+                    await bot.sendMessage(chatId, `📊 Week: $${w.total.toFixed(2)}`);
+                    break;
+
+                case 'month':
+                    const m = await getMonthlyTotal(userId);
+                    await bot.sendMessage(chatId, `📊 Month: $${m.total.toFixed(2)}`);
+                    break;
+
+                case 'delete':
+                    const del = await deleteLastExpense(userId);
+                    await bot.sendMessage(chatId, del ? `🗑️ Deleted: ${del.description}` : '❌ Nothing to delete');
+                    break;
+
+                default:
+                    await bot.sendMessage(chatId, `❓ Unknown command. Try \`help\``);
+            }
+        } catch (e) {
+            console.error(e);
+            await bot.sendMessage(chatId, `❌ Error: ${e.message}`);
+        }
+    });
+
+    console.log('🤖 Bot started');
+}
+
+// Start Server
+initDb().then(() => {
+    app.listen(PORT, () => {
+        console.log(`🌍 Server running on port ${PORT}`);
+    });
+});
