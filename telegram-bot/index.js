@@ -63,7 +63,9 @@ const AUTO_CATEGORIES = {
 
 const db = new Client({
     connectionString: DATABASE_URL,
-    ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+    ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+    keepAlive: true,
+    connectionTimeoutMillis: 10000
 });
 
 async function initDb() {
@@ -943,6 +945,11 @@ const dashboardHTML = `
 </body>
 </html>
 `;
+
+// Health check endpoint - ping this every 14 minutes to prevent cold starts
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 app.get('/', (req, res) => res.send(dashboardHTML));
 
