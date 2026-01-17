@@ -60,6 +60,7 @@ async function initDb() {
                 user_id VARCHAR(50) PRIMARY KEY,
                 name VARCHAR(100),
                 budget DECIMAL(10,2) DEFAULT 0,
+                currency VARCHAR(10) DEFAULT '$',
                 created_at TIMESTAMP DEFAULT NOW()
             );
             
@@ -78,6 +79,14 @@ async function initDb() {
                 expires_at TIMESTAMP
             );
         `);
+
+        // Migration: Add currency column if it doesn't exist (for existing users)
+        try {
+            await db.query(`ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT '$'`);
+        } catch (e) {
+            // Ignore error if column exists
+        }
+
         console.log('✅ Database tables ready');
     } catch (error) {
         console.error('❌ Database connection error:', error.message);
@@ -92,6 +101,15 @@ async function ensureUser(userId, name) {
         VALUES ($1, $2)
         ON CONFLICT (user_id) DO UPDATE SET name = $2
     `, [userId, name]);
+}
+
+async function getUserCurrency(userId) {
+    const res = await db.query(`SELECT currency FROM telegram_users WHERE user_id = $1`, [userId]);
+    return res.rows[0]?.currency || '$';
+}
+
+async function setUserCurrency(userId, currency) {
+    await db.query(`UPDATE telegram_users SET currency = $1 WHERE user_id = $2`, [currency.toUpperCase(), userId]);
 }
 
 async function addExpense(userId, description, amount, category) {
@@ -229,6 +247,9 @@ function parseExpenseMessage(message) {
     if (text === 'recent' || text === 'history') return { type: 'recent' };
     if (text === 'budget') return { type: 'budgetstatus' };
     if (text === 'categories' || text === 'breakdown') return { type: 'breakdown' };
+
+    const currencyMatch = text.match(/^currency\s+([a-zA-Z$]+)$/);
+    if (currencyMatch) return { type: 'setcurrency', currency: currencyMatch[1] };
 
     const budgetMatch = text.match(/^budget\s+(\d+\.?\d*)$/);
     if (budgetMatch) return { type: 'setbudget', amount: parseFloat(budgetMatch[1]) };
@@ -407,6 +428,7 @@ const dashboardHTML = `
         }
         
         function render(data) {
+            const cur = data.currency || '$';
             const budgetPercent = data.budget.budget > 0 
                 ? Math.min(100, (data.budget.spent / data.budget.budget) * 100) 
                 : 0;
@@ -421,21 +443,21 @@ const dashboardHTML = `
             document.getElementById('app').innerHTML = \`
                 <div class="header">
                     <h1>Hi, \${data.name.split(' ')[0]} 👋</h1>
-                    <span class="badge">PRO</span>
+                    <span class="badge">\${cur}</span>
                 </div>
 
                 <div class="summary-grid">
                     <div class="stat-card today">
                         <div class="stat-label">TODAY</div>
-                        <div class="stat-value">$\${data.today.total.toFixed(2)}</div>
+                        <div class="stat-value">\${cur}\${data.today.total.toFixed(2)}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">WEEK</div>
-                        <div class="stat-value">$\${data.week.total.toFixed(2)}</div>
+                        <div class="stat-value">\${cur}\${data.week.total.toFixed(2)}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">MONTH</div>
-                        <div class="stat-value">$\${data.month.total.toFixed(2)}</div>
+                        <div class="stat-value">\${cur}\${data.month.total.toFixed(2)}</div>
                     </div>
                 </div>
 
@@ -446,8 +468,8 @@ const dashboardHTML = `
                         <div style="font-weight:600; font-size:0.9rem">\${budgetPercent.toFixed(0)}%</div>
                     </div>
                     <div class="budget-info">
-                        <span>Spent: $\${data.budget.spent.toFixed(2)}</span>
-                        <span style="opacity:0.6">Target: $\${data.budget.budget.toFixed(0)}</span>
+                        <span>Spent: \${cur}\${data.budget.spent.toFixed(2)}</span>
+                        <span style="opacity:0.6">Target: \${cur}\${data.budget.budget.toFixed(0)}</span>
                     </div>
                     <div class="progress-track">
                         <div class="progress-fill" style="width: \${budgetPercent}%; background: \${progressBarColor}"></div>
@@ -455,7 +477,7 @@ const dashboardHTML = `
                     <div style="text-align:right; font-size:0.8rem; margin-top:8px; color:var(--text-sub)">
                         \${data.budget.remaining < 0 ? 'Over by' : 'Left:'} 
                         <span style="color:\${data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">
-                            $\${Math.abs(data.budget.remaining).toFixed(2)}
+                            \${cur}\${Math.abs(data.budget.remaining).toFixed(2)}
                         </span>
                     </div>
                 </div>
@@ -486,7 +508,7 @@ const dashboardHTML = `
                                         <p>\${new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric'})} • \${e.category}</p>
                                     </div>
                                 </div>
-                                <div class="expense-amount">-$\${parseFloat(e.amount).toFixed(2)}</div>
+                                <div class="expense-amount">-\${cur}\${parseFloat(e.amount).toFixed(2)}</div>
                             </div>
                         \`).join('') : '<div class="empty-state">No transactions yet 🎉</div>'}
                     </div>
@@ -562,13 +584,14 @@ app.get('/api/dashboard', async (req, res) => {
         const userId = await validateToken(token);
         if (!userId) return res.status(401).json({ error: 'Invalid token' });
 
-        const [today, week, month, expenses, budget, categories] = await Promise.all([
+        const [today, week, month, expenses, budget, categories, currency] = await Promise.all([
             getTodayTotal(userId),
             getWeeklyTotal(userId),
             getMonthlyTotal(userId),
             getRecentExpenses(userId, 20),
             getBudgetStatus(userId),
-            getCategoryBreakdown(userId)
+            getCategoryBreakdown(userId),
+            getUserCurrency(userId)
         ]);
 
         // Get user name
@@ -576,6 +599,7 @@ app.get('/api/dashboard', async (req, res) => {
 
         res.json({
             name: userRes.rows[0]?.name || 'User',
+            currency,
             today, week, month, expenses, budget, categories
         });
     } catch (e) {
@@ -600,19 +624,30 @@ if (BOT_TOKEN) {
 
             // Ensure user exists
             await ensureUser(userId, firstName);
+            const cur = await getUserCurrency(userId);
 
             const parsed = parseExpenseMessage(text);
 
             switch (parsed.type) {
                 case 'help':
-                    await bot.sendMessage(chatId, `💰 *Expense Bot*\nAdd: \`coffee 5\`\nCheck: \`?\`, \`??\`, \`???\`\nDash: \`$\``, { parse_mode: 'Markdown' });
+                    await bot.sendMessage(chatId, `💰 *Expense Bot*\nAdd: \`coffee 5\`\nCheck: \`?\`, \`??\`, \`???\`\nDash: \`$\`\n\nSet Currency: \`currency SGD\``, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'setcurrency':
+                    await setUserCurrency(userId, parsed.currency);
+                    await bot.sendMessage(chatId, `💱 Currency set to *${parsed.currency.toUpperCase()}*`, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'setbudget':
+                    await setBudget(userId, parsed.amount);
+                    await bot.sendMessage(chatId, `💼 Budget set to *${cur}${parsed.amount.toFixed(2)}*`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'add':
                     const cat = parsed.category || autoCategory(parsed.description) || 'other';
                     await addExpense(userId, parsed.description, parsed.amount, cat);
                     const today = await getTodayTotal(userId);
-                    await bot.sendMessage(chatId, `✅ Added: ${parsed.description} ($${parsed.amount})\n📊 Today: $${today.total.toFixed(2)}`);
+                    await bot.sendMessage(chatId, `✅ Added: ${parsed.description} (${cur}${parsed.amount.toFixed(2)})\n📊 Today: ${cur}${today.total.toFixed(2)}`);
                     break;
 
                 case 'dashboard':
@@ -624,17 +659,17 @@ if (BOT_TOKEN) {
 
                 case 'today':
                     const t = await getTodayTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Today: $${t.total.toFixed(2)}`);
+                    await bot.sendMessage(chatId, `📊 Today: ${cur}${t.total.toFixed(2)}`);
                     break;
 
                 case 'week':
                     const w = await getWeeklyTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Week: $${w.total.toFixed(2)}`);
+                    await bot.sendMessage(chatId, `📊 Week: ${cur}${w.total.toFixed(2)}`);
                     break;
 
                 case 'month':
                     const m = await getMonthlyTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Month: $${m.total.toFixed(2)}`);
+                    await bot.sendMessage(chatId, `📊 Month: ${cur}${m.total.toFixed(2)}`);
                     break;
 
                 case 'delete':
