@@ -391,7 +391,7 @@ const dashboardHTML = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💰 Expense Tracker</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg: #0f172a;
@@ -640,8 +640,16 @@ const dashboardHTML = `
         let currentMonthIdx = new Date().getMonth();
 
         function changeMonth(offset) {
-            const d = new Date(currentYearVal, currentMonthIdx + offset, 1);
-            load(d.getFullYear(), d.getMonth() + 1);
+            event.stopPropagation();
+            currentMonthIdx = currentMonthIdx + offset;
+            if (currentMonthIdx < 0) {
+                currentMonthIdx = 11;
+                currentYearVal--;
+            } else if (currentMonthIdx > 11) {
+                currentMonthIdx = 0;
+                currentYearVal++;
+            }
+            load(currentYearVal, currentMonthIdx + 1);
         }
 
         // Populate Categories
@@ -657,7 +665,7 @@ const dashboardHTML = `
             currentToken = new URLSearchParams(window.location.search).get('token');
             if(!currentToken) return showError('Link expired. Return to Telegram.');
             
-            let url = '/api/dashboard?token=' + currentToken;
+            let url = '/api/dashboard?token=' + currentToken + '&t=' + Date.now();
             if(year && month) url += '&year=' + year + '&month=' + month;
 
             try {
@@ -792,9 +800,9 @@ const dashboardHTML = `
                 
                 // Nav Controls
                 html += '<div style="display:flex; align-items:center; gap:8px; flex:1">';
-                html += '<div onclick="changeMonth(-1); event.stopPropagation()" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">‹</div>';
+                html += '<div onclick="changeMonth(-1)" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">‹</div>';
                 html += '<div class="section-title" onclick="toggleCalendar()" style="flex:1; text-align:center; cursor:pointer; user-select:none">' + currentMonth + ' ' + Y + '</div>';
-                html += '<div onclick="changeMonth(1); event.stopPropagation()" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">›</div>';
+                html += '<div onclick="changeMonth(1)" style="font-size:1.4rem; cursor:pointer; padding:0 8px; user-select:none">›</div>';
                 html += '</div>';
 
                 // Collapse Icon
@@ -836,10 +844,17 @@ const dashboardHTML = `
 
             document.getElementById('app').innerHTML = html;
             
-            if (hasCategories) renderChart(data.categories);
+            if (hasCategories) {
+                try {
+                    renderChart(data.categories);
+                } catch(e) {
+                    console.error('Chart error:', e);
+                }
+            }
         }
 
         function renderChart(categories) {
+            if (typeof Chart === 'undefined') return;
             const ctx = document.getElementById('expensesChart').getContext('2d');
             const labels = [];
             const values = [];
@@ -908,6 +923,11 @@ const dashboardHTML = `
             const desc = document.getElementById('descInput').value;
             const amount = document.getElementById('amountInput').value;
             const category = document.getElementById('catInput').value;
+
+            if(!desc || !amount) {
+                alert('Please fill in valid description and amount');
+                return;
+            }
 
             const url = id ? ('/api/expenses/' + id) : '/api/expenses';
             const method = id ? 'PUT' : 'POST';
