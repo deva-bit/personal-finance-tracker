@@ -24,22 +24,39 @@ const VALID_CATEGORIES = Object.keys(CATEGORIES);
 
 // Auto-categorization
 const AUTO_CATEGORIES = {
+    // Self-references (so 'food 10' -> category: food)
+    'food': 'food', 'transport': 'transport', 'shopping': 'shopping',
+    'bills': 'bills', 'entertainment': 'entertainment', 'health': 'health',
+    'subscription': 'subscription', 'other': 'other',
+
+    // Synonyms
     'coffee': 'food', 'kopi': 'food', 'teh': 'food', 'lunch': 'food', 'dinner': 'food',
     'breakfast': 'food', 'brunch': 'food', 'supper': 'food', 'snack': 'food', 'bubble tea': 'food',
-    'bbt': 'food', 'makan': 'food', 'food': 'food', 'eat': 'food', 'meal': 'food',
-    'hawker': 'food', 'kopitiam': 'food', 'restaurant': 'food', 'mcdonalds': 'food', 'mcd': 'food',
-    'kfc': 'food', 'subway': 'food', 'starbucks': 'food', 'pizza': 'food', 'nasi': 'food',
-    'grab': 'transport', 'gojek': 'transport', 'uber': 'transport', 'taxi': 'transport',
-    'mrt': 'transport', 'bus': 'transport', 'train': 'transport', 'petrol': 'transport',
-    'fuel': 'transport', 'parking': 'transport', 'toll': 'transport',
+    'bbt': 'food', 'makan': 'food', 'eat': 'food', 'meal': 'food', 'drink': 'food',
+    'hawker': 'food', 'kopitiam': 'food', 'restaurant': 'food', 'cafe': 'food',
+    'mcdonalds': 'food', 'mcd': 'food', 'kfc': 'food', 'subway': 'food', 'starbucks': 'food',
+    'pizza': 'food', 'nasi': 'food', 'chicken': 'food', 'rice': 'food', 'noodle': 'food',
+
+    'grab': 'transport', 'gojek': 'transport', 'uber': 'transport', 'taxi': 'transport', 'cab': 'transport',
+    'mrt': 'transport', 'bus': 'transport', 'train': 'transport', 'petrol': 'transport', 'gas': 'transport',
+    'fuel': 'transport', 'parking': 'transport', 'toll': 'transport', 'erp': 'transport', 'ezlink': 'transport',
+
     'ntuc': 'shopping', 'fairprice': 'shopping', 'giant': 'shopping', 'shopee': 'shopping',
     'lazada': 'shopping', 'amazon': 'shopping', 'clothes': 'shopping', 'grocery': 'shopping',
+    'buy': 'shopping', 'supermarket': 'shopping', 'markt': 'shopping', 'uniqlo': 'shopping',
+
     'electric': 'bills', 'electricity': 'bills', 'water': 'bills', 'gas': 'bills',
-    'phone': 'bills', 'mobile': 'bills', 'internet': 'bills', 'rent': 'bills',
+    'phone': 'bills', 'mobile': 'bills', 'internet': 'bills', 'wifi': 'bills', 'rent': 'bills',
+    'singtel': 'bills', 'starhub': 'bills', 'm1': 'bills',
+
     'netflix': 'subscription', 'spotify': 'subscription', 'youtube': 'subscription',
-    'disney': 'subscription', 'gym': 'subscription', 'chatgpt': 'subscription',
-    'movie': 'entertainment', 'cinema': 'entertainment', 'karaoke': 'entertainment',
-    'doctor': 'health', 'clinic': 'health', 'medicine': 'health', 'pharmacy': 'health'
+    'disney': 'subscription', 'gym': 'subscription', 'chatgpt': 'subscription', 'prime': 'subscription',
+    'icloud': 'subscription',
+
+    'movie': 'entertainment', 'cinema': 'entertainment', 'karaoke': 'entertainment', 'game': 'entertainment',
+    'steam': 'subscription', 'ticket': 'entertainment',
+
+    'doctor': 'health', 'clinic': 'health', 'medicine': 'health', 'pharmacy': 'health', 'panadol': 'health'
 };
 
 // ============== DATABASE CONNECTION ==============
@@ -238,11 +255,23 @@ async function validateToken(token) {
 
 function autoCategory(description) {
     const desc = description.toLowerCase();
+
+    // 1. Check exact match
     if (AUTO_CATEGORIES[desc]) return AUTO_CATEGORIES[desc];
+
+    // 2. Check if description contains keyword (whole word match preferred)
+    for (const [keyword, category] of Object.entries(AUTO_CATEGORIES)) {
+        // Use regex for whole word match to avoid 'business' matching 'bus'
+        const regex = new RegExp(`\\b${keyword}\\b`);
+        if (regex.test(desc)) return category;
+    }
+
+    // 3. Fallback: partial match
     for (const [keyword, category] of Object.entries(AUTO_CATEGORIES)) {
         if (desc.includes(keyword)) return category;
     }
-    return null;
+
+    return 'other'; // Default is now 'other' instead of null, but addExpense handles null
 }
 
 function parseExpenseMessage(message) {
