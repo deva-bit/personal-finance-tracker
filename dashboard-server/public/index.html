@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💰 Expense Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 24px;
+            padding: 50px 40px;
+            max-width: 450px;
+            width: 100%;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .logo {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #1a1a2e;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+        .input-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        .input-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 18px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
+        }
+        .input-group input::placeholder {
+            color: #aaa;
+        }
+        .input-hint {
+            color: #888;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .btn {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102,126,234,0.4);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 30px 0;
+            color: #aaa;
+            font-size: 14px;
+        }
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e2e8f0;
+        }
+        .divider span {
+            padding: 0 15px;
+        }
+        .features {
+            text-align: left;
+            background: #f8f9ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .features h3 {
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            color: #444;
+            font-size: 14px;
+        }
+        .feature-item span {
+            font-size: 20px;
+        }
+        .saved-users {
+            margin-top: 30px;
+            text-align: left;
+        }
+        .saved-users h3 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        .user-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 15px;
+            background: #f8f9ff;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: inherit;
+            font-size: 16px;
+            color: #333;
+        }
+        .user-btn:hover {
+            border-color: #667eea;
+            background: white;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        .error-msg {
+            color: #e53e3e;
+            font-size: 14px;
+            margin-top: 10px;
+            display: none;
+        }
+        @media (max-width: 480px) {
+            .container {
+                padding: 40px 25px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .logo {
+                font-size: 48px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">💰</div>
+        <h1>Expense Tracker</h1>
+        <p class="subtitle">Track your spending via WhatsApp</p>
+
+        <div id="savedUsers" class="saved-users" style="display: none;">
+            <h3>👋 Welcome back!</h3>
+            <div id="usersList"></div>
+            <div class="divider"><span>or enter new number</span></div>
+        </div>
+
+        <form id="loginForm">
+            <div class="input-group">
+                <label for="phone">Your WhatsApp Number</label>
+                <input type="tel" id="phone" placeholder="e.g. 6512345678" autocomplete="tel">
+                <p class="input-hint">Enter without + or spaces (e.g. 6512345678)</p>
+                <p class="error-msg" id="errorMsg">Please enter a valid phone number</p>
+            </div>
+            <button type="submit" class="btn">View My Expenses 📊</button>
+        </form>
+
+        <div class="features">
+            <h3>How it works</h3>
+            <div class="feature-item">
+                <span>📱</span>
+                <div>Send WhatsApp: <strong>add lunch 15 food</strong></div>
+            </div>
+            <div class="feature-item">
+                <span>📊</span>
+                <div>View your expenses here anytime</div>
+            </div>
+            <div class="feature-item">
+                <span>💬</span>
+                <div>Send <strong>help</strong> for all commands</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved users from localStorage
+        function loadSavedUsers() {
+            const saved = JSON.parse(localStorage.getItem('expenseTrackerUsers') || '[]');
+            if (saved.length > 0) {
+                document.getElementById('savedUsers').style.display = 'block';
+                const usersList = document.getElementById('usersList');
+                usersList.innerHTML = '';
+                
+                saved.forEach(user => {
+                    const btn = document.createElement('button');
+                    btn.className = 'user-btn';
+                    btn.type = 'button';
+                    btn.innerHTML = `
+                        <div class="user-avatar">${user.name ? user.name[0].toUpperCase() : '👤'}</div>
+                        <div>
+                            <strong>${user.name || 'User'}</strong>
+                            <div style="color: #666; font-size: 14px;">+${user.phone}</div>
+                        </div>
+                    `;
+                    btn.onclick = () => goToDashboard(user.phone);
+                    usersList.appendChild(btn);
+                });
+            }
+        }
+
+        function saveUser(phone) {
+            const saved = JSON.parse(localStorage.getItem('expenseTrackerUsers') || '[]');
+            if (!saved.find(u => u.phone === phone)) {
+                saved.push({ phone, name: '' });
+                localStorage.setItem('expenseTrackerUsers', JSON.stringify(saved));
+            }
+        }
+
+        function goToDashboard(phone) {
+            saveUser(phone);
+            window.location.href = `/dashboard.html?phone=${phone}`;
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const phone = document.getElementById('phone').value.replace(/\D/g, '');
+            
+            if (phone.length < 8) {
+                document.getElementById('errorMsg').style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('errorMsg').style.display = 'none';
+            goToDashboard(phone);
+        });
+
+        // Focus on input
+        document.getElementById('phone').focus();
+        
+        // Load saved users on page load
+        loadSavedUsers();
+    </script>
+</body>
+</html>
