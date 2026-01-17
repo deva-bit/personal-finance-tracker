@@ -259,38 +259,138 @@ const dashboardHTML = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💰 Expense Tracker</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #0f172a; color: #fff; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .header { text-align: center; margin-bottom: 30px; padding: 20px; background: #1e293b; border-radius: 16px; }
-        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
-        .stat { background: #1e293b; padding: 15px; border-radius: 12px; text-align: center; }
-        .stat h3 { color: #94a3b8; font-size: 0.8rem; margin-bottom: 5px; }
-        .stat div { font-size: 1.2rem; font-weight: 700; color: #4ade80; }
-        .card { background: #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
-        .card h2 { font-size: 1.1rem; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
-        .expense-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #334155; }
-        .expense-left { display: flex; align-items: center; gap: 12px; }
-        .expense-emoji { font-size: 1.2rem; background: #334155; padding: 8px; border-radius: 50%; }
-        .expense-amount { color: #f87171; font-weight: 600; }
-        .error { text-align: center; padding: 50px; background: #1e293b; border-radius: 16px; margin-top: 50px; }
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #eab308;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            background: var(--bg); 
+            color: var(--text-main); 
+            padding: 20px; 
+            min-height: 100vh;
+        }
+        .container { max-width: 600px; margin: 0 auto; padding-bottom: 40px; }
+        
+        /* Header */
+        .header { 
+            margin-bottom: 30px; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 700; }
+        .badge { 
+            background: rgba(59, 130, 246, 0.1); 
+            color: var(--accent); 
+            padding: 5px 12px; 
+            border-radius: 20px; 
+            font-size: 0.85rem; 
+            font-weight: 600;
+        }
+
+        /* Summary Cards */
+        .summary-grid { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 12px; 
+            margin-bottom: 24px; 
+        }
+        .stat-card { 
+            background: var(--card-bg); 
+            padding: 16px; 
+            border-radius: 16px; 
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .stat-label { font-size: 0.75rem; color: var(--text-sub); margin-bottom: 4px; font-weight: 500; }
+        .stat-value { font-size: 1.1rem; font-weight: 700; color: var(--text-main); }
+        .stat-card.today .stat-value { color: var(--accent); }
+
+        /* Budget Section */
+        .section-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .section-title { font-size: 1.1rem; font-weight: 600; }
+        
+        .budget-info { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; }
+        .progress-track { background: #334155; height: 12px; border-radius: 6px; overflow: hidden; }
+        .progress-fill { height: 100%; transition: width 1s ease; border-radius: 6px; }
+        
+        /* Charts */
+        .chart-container { position: relative; height: 250px; width: 100%; display: flex; justify-content: center; }
+
+        /* Expense List */
+        .expense-list { display: flex; flex-direction: column; gap: 12px; }
+        .expense-item { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding-bottom: 12px;
+            border-bottom: 1px solid #334155;
+        }
+        .expense-item:last-child { border-bottom: none; padding-bottom: 0; }
+        
+        .expense-left { display: flex; align-items: center; gap: 14px; }
+        .icon-box { 
+            width: 42px; height: 42px; 
+            border-radius: 12px; 
+            background: #334155; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 1.25rem; 
+        }
+        .expense-details h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
+        .expense-details p { font-size: 0.75rem; color: var(--text-sub); }
+        .expense-amount { font-weight: 600; font-size: 1rem; color: var(--text-main); }
+        
+        .loading, .error { text-align: center; padding: 40px; color: var(--text-sub); }
+        .error { color: var(--danger); }
+        
+        .empty-state { text-align: center; padding: 30px 0; color: var(--text-sub); font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div id="app" class="container">
-        <div class="loading" style="text-align:center; padding: 50px;">Loading...</div>
+        <div class="loading">
+            <h2>💰 Loading...</h2>
+        </div>
     </div>
+
     <script>
         const emojis = ${JSON.stringify(CATEGORIES)};
+        const catColors = {
+            food: '#f59e0b',       // Amber
+            transport: '#3b82f6',  // Blue
+            shopping: '#ec4899',   // Pink
+            bills: '#ef4444',      // Red
+            entertainment: '#8b5cf6', // Violet
+            health: '#10b981',     // Emerald
+            subscription: '#6366f1', // Indigo
+            other: '#64748b'       // Slate
+        };
+
         async function load() {
             const token = new URLSearchParams(window.location.search).get('token');
-            if(!token) return showError('Missing access token. Please get a link from Telegram.');
+            if(!token) return showError('Link expired or invalid. Send $ to bot again.');
             
             try {
                 const res = await fetch('/api/dashboard?token=' + token);
-                if(!res.ok) throw new Error('Invalid token');
+                if(!res.ok) throw new Error('Refresh link via Telegram ($)');
                 const data = await res.json();
                 render(data);
             } catch(e) {
@@ -299,36 +399,153 @@ const dashboardHTML = `
         }
         
         function showError(msg) {
-            document.getElementById('app').innerHTML = '<div class="error"><h3>❌ Access Denied</h3><p>' + msg + '</p></div>';
+            document.getElementById('app').innerHTML = \`
+                <div class="error">
+                    <h3>❌ Access Denied</h3>
+                    <p style="margin-top:10px">\${msg}</p>
+                </div>\`;
         }
         
         function render(data) {
+            const budgetPercent = data.budget.budget > 0 
+                ? Math.min(100, (data.budget.spent / data.budget.budget) * 100) 
+                : 0;
+            
+            let progressBarColor = 'var(--success)';
+            if (budgetPercent > 80) progressBarColor = 'var(--warning)';
+            if (budgetPercent >= 100) progressBarColor = 'var(--danger)';
+
+            const hasExpenses = data.expenses.length > 0;
+            const hasCategories = Object.keys(data.categories).length > 0;
+
             document.getElementById('app').innerHTML = \`
                 <div class="header">
-                    <h1>💰 \${data.name}'s Expenses</h1>
+                    <h1>Hi, \${data.name.split(' ')[0]} 👋</h1>
+                    <span class="badge">PRO</span>
                 </div>
-                <div class="stats">
-                    <div class="stat"><h3>Today</h3><div>$\${data.today.total.toFixed(2)}</div></div>
-                    <div class="stat"><h3>Week</h3><div>$\${data.week.total.toFixed(2)}</div></div>
-                    <div class="stat"><h3>Month</h3><div>$\${data.month.total.toFixed(2)}</div></div>
+
+                <div class="summary-grid">
+                    <div class="stat-card today">
+                        <div class="stat-label">TODAY</div>
+                        <div class="stat-value">$\${data.today.total.toFixed(2)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">WEEK</div>
+                        <div class="stat-value">$\${data.week.total.toFixed(2)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">MONTH</div>
+                        <div class="stat-value">$\${data.month.total.toFixed(2)}</div>
+                    </div>
                 </div>
-                <div class="card">
-                    <h2>📋 Recent Activity</h2>
-                    <div>\${data.expenses.map(e => \`
-                        <div class="expense-item">
-                            <div class="expense-left">
-                                <div class="expense-emoji">\${emojis[e.category] || '📦'}</div>
-                                <div>
-                                    <div style="font-weight:500">\${e.description}</div>
-                                    <div style="font-size:0.8rem;color:#94a3b8">\${new Date(e.date).toLocaleDateString()}</div>
-                                </div>
-                            </div>
-                            <div class="expense-amount">-$\${parseFloat(e.amount).toFixed(2)}</div>
+
+                \${data.budget.budget > 0 ? \`
+                <div class="section-card">
+                    <div class="section-header" style="margin-bottom:12px">
+                        <div class="section-title">Monthly Budget</div>
+                        <div style="font-weight:600; font-size:0.9rem">\${budgetPercent.toFixed(0)}%</div>
+                    </div>
+                    <div class="budget-info">
+                        <span>Spent: $\${data.budget.spent.toFixed(2)}</span>
+                        <span style="opacity:0.6">Target: $\${data.budget.budget.toFixed(0)}</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: \${budgetPercent}%; background: \${progressBarColor}"></div>
+                    </div>
+                    <div style="text-align:right; font-size:0.8rem; margin-top:8px; color:var(--text-sub)">
+                        \${data.budget.remaining < 0 ? 'Over by' : 'Left:'} 
+                        <span style="color:\${data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">
+                            $\${Math.abs(data.budget.remaining).toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+                \` : ''}
+
+                <div class="section-card">
+                    <div class="section-header">
+                        <div class="section-title">Spending Breakdown</div>
+                    </div>
+                    \${hasCategories ? \`
+                        <div class="chart-container">
+                            <canvas id="expensesChart"></canvas>
                         </div>
-                    \`).join('')}</div>
+                    \` : '<div class="empty-state">No data this month yet 📉</div>'}
+                </div>
+
+                <div class="section-card">
+                    <div class="section-header">
+                        <div class="section-title">Recent Activity</div>
+                    </div>
+                    <div class="expense-list">
+                        \${hasExpenses ? data.expenses.map(e => \`
+                            <div class="expense-item">
+                                <div class="expense-left">
+                                    <div class="icon-box">\${emojis[e.category] || '📦'}</div>
+                                    <div class="expense-details">
+                                        <h4>\${e.description}</h4>
+                                        <p>\${new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric'})} • \${e.category}</p>
+                                    </div>
+                                </div>
+                                <div class="expense-amount">-$\${parseFloat(e.amount).toFixed(2)}</div>
+                            </div>
+                        \`).join('') : '<div class="empty-state">No transactions yet 🎉</div>'}
+                    </div>
                 </div>
             \`;
+
+            // Draw Chart if we have data
+            if (hasCategories) {
+                renderChart(data.categories);
+            }
         }
+
+        function renderChart(categories) {
+            const ctx = document.getElementById('expensesChart').getContext('2d');
+            
+            // Filter out zero values and sort
+            const labels = [];
+            const values = [];
+            const colors = [];
+            
+            Object.entries(categories)
+                .filter(([, val]) => val > 0)
+                .sort(([, a], [, b]) => b - a)
+                .forEach(([cat, val]) => {
+                    labels.push(cat.charAt(0).toUpperCase() + cat.slice(1));
+                    values.push(val);
+                    colors.push(catColors[cat] || '#cbd5e1');
+                });
+
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { size: 11, family: 'Outfit' },
+                                boxWidth: 10,
+                                padding: 15
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+        
         load();
     </script>
 </body>
@@ -345,11 +562,13 @@ app.get('/api/dashboard', async (req, res) => {
         const userId = await validateToken(token);
         if (!userId) return res.status(401).json({ error: 'Invalid token' });
 
-        const [today, week, month, expenses] = await Promise.all([
+        const [today, week, month, expenses, budget, categories] = await Promise.all([
             getTodayTotal(userId),
             getWeeklyTotal(userId),
             getMonthlyTotal(userId),
-            getRecentExpenses(userId, 20)
+            getRecentExpenses(userId, 20),
+            getBudgetStatus(userId),
+            getCategoryBreakdown(userId)
         ]);
 
         // Get user name
@@ -357,7 +576,7 @@ app.get('/api/dashboard', async (req, res) => {
 
         res.json({
             name: userRes.rows[0]?.name || 'User',
-            today, week, month, expenses
+            today, week, month, expenses, budget, categories
         });
     } catch (e) {
         console.error(e);
