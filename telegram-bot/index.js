@@ -835,7 +835,7 @@ const dashboardHTML = `
             } catch(e) { alert('Error deleting'); }
         }
         
-        function showError(msg) { document.getElementById('app').innerHTML = `< div class="error" ><h3>❌ Error</h3><p>${msg}</p></div > `; }
+        function showError(msg) { document.getElementById('app').innerHTML = '<div class="error"><h3>❌ Error</h3><p>' + msg + '</p></div>'; }
 
         load();
     </script>
