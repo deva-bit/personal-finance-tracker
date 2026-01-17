@@ -861,18 +861,24 @@ app.delete('/api/expenses/:id', async (req, res) => {
 if (BOT_TOKEN) {
     const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
+    // Define CATEGORIES and emojis for the bot
+    const CATEGORIES = {
+        food: '🍔', transport: '🚗', shopping: '🛍️', bills: '🧾',
+        entertainment: '🎬', health: '💊', subscription: '💳', other: '📦'
+    };
+
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         try {
-            const userId = msg.from.id.toString();
+            const telegramId = msg.from.id.toString(); // Renamed userId to telegramId for clarity
             const text = msg.text;
             const firstName = msg.from.first_name || 'User';
 
             if (!text) return;
 
             // Ensure user exists
-            await ensureUser(userId, firstName);
-            const cur = await getUserCurrency(userId);
+            await ensureUser(telegramId, firstName);
+            const userCurrency = await getUserCurrency(telegramId); // Renamed cur to userCurrency
 
             const parsed = parseExpenseMessage(text);
 
@@ -882,58 +888,213 @@ if (BOT_TOKEN) {
                     break;
 
                 case 'setcurrency':
-                    await setUserCurrency(userId, parsed.currency);
+                    await setUserCurrency(telegramId, parsed.currency);
                     await bot.sendMessage(chatId, `💱 Currency set to *${parsed.currency.toUpperCase()}*`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'setbudget':
-                    await setBudget(userId, parsed.amount);
-                    await bot.sendMessage(chatId, `💼 Budget set to *${cur}${parsed.amount.toFixed(2)}*`, { parse_mode: 'Markdown' });
+                    await setBudget(telegramId, parsed.amount);
+                    await bot.sendMessage(chatId, `💼 Budget set to *${userCurrency}${parsed.amount.toFixed(2)}*`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'add':
-                    const cat = parsed.category || autoCategory(parsed.description) || 'other';
-                    await addExpense(userId, parsed.description, parsed.amount, cat);
-                    const today = await getTodayTotal(userId);
-                    await bot.sendMessage(chatId, `✅ Added: ${parsed.description} (${cur}${parsed.amount.toFixed(2)})\n📊 Today: ${cur}${today.total.toFixed(2)}`);
-                    break;
+                    const expense = await addExpense(telegramId, parsed.description, parsed.amount, parsed.category);
+                    const desc = expense.description;
+                    const amt = parseFloat(expense.amount).toFixed(2);
+                    const cat = expense.category;
+                    const emoji = CATEGORIES[cat] || '📦';
 
-                case 'dashboard':
-                    const token = await generateAccessToken(userId);
-                    // Use Render URL if available, else localhost
-                    const url = `${BASE_URL}/?token=${token}`;
-                    await bot.sendMessage(chatId, `📊 *Dashboard Link:*\n${url}\n_(Valid for 30 mins)_`, { parse_mode: 'Markdown' });
+                    // Construct Inline Keyboard with Categories
+                    const categoryButtons = [];
+                    const catKeys = Object.keys(CATEGORIES);
+                    let row = [];
+                    catKeys.forEach((k, i) => {
+                        const btnEmoji = CATEGORIES[k];
+                        // Shorten label for button
+                        const label = k.charAt(0).toUpperCase() + k.slice(1);
+                        row.push({ text: `${btnEmoji} ${label}`, callback_data: `cat_${expense.id}_${k}` });
+
+                        if (row.length === 3 || i === catKeys.length - 1) {
+                            categoryButtons.push(row);
+                            row = [];
+                        }
+                    });
+
+                    await bot.sendMessage(chatId, `✅ Added **${desc}** (${userCurrency}${amt}) to ${emoji} **${cat.toUpperCase()}**.\n\nWrong category? Tap to fix:`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: categoryButtons
+                        }
+                    });
                     break;
 
                 case 'today':
-                    const t = await getTodayTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Today: ${cur}${t.total.toFixed(2)}`);
+                    const today = await getTodayTotal(telegramId);
+                    await bot.sendMessage(chatId, `📅 **Today's Spending:**\n${userCurrency}${today.total.toFixed(2)} (${today.count} items)`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'week':
-                    const w = await getWeeklyTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Week: ${cur}${w.total.toFixed(2)}`);
+                    const week = await getWeeklyTotal(telegramId);
+                    await bot.sendMessage(chatId, `📅 **This Week:**\n${userCurrency}${week.total.toFixed(2)} (${week.count} items)`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'month':
-                    const m = await getMonthlyTotal(userId);
-                    await bot.sendMessage(chatId, `📊 Month: ${cur}${m.total.toFixed(2)}`);
+                    const month = await getMonthlyTotal(telegramId);
+                    await bot.sendMessage(chatId, `📅 **This Month:**\n${userCurrency}${month.total.toFixed(2)} (${month.count} items)`, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'dashboard':
+                    const token = await generateAccessToken(telegramId);
+                    const dashboardUrl = `${BASE_URL}/?token=${token}`;
+                    await bot.sendMessage(chatId, `📊 **Your Dashboard**\naccess here: ${dashboardUrl}`, { parse_mode: 'Markdown' });
                     break;
 
                 case 'delete':
-                    const del = await deleteLastExpense(userId);
-                    await bot.sendMessage(chatId, del ? `🗑️ Deleted: ${del.description}` : '❌ Nothing to delete');
+                    const deleted = await deleteLastExpense(telegramId);
+                    if (deleted) {
+                        await bot.sendMessage(chatId, `🗑️ Deleted: ${deleted.description} (${userCurrency}${deleted.amount})`, { parse_mode: 'Markdown' });
+                    } else {
+                        await bot.sendMessage(chatId, `⚠️ No expenses found to delete.`);
+                    }
+                    break;
+
+                case 'recent':
+                    const recent = await getRecentExpenses(telegramId, 5);
+                    if (recent.length === 0) {
+                        await bot.sendMessage(chatId, `No recent expenses.`);
+                    } else {
+                        let msg = `📜 **Recent Expenses:**\n`;
+                        recent.forEach(e => {
+                            const e_emoji = CATEGORIES[e.category] || '📦';
+                            msg += `${e_emoji} ${e.description}: ${userCurrency}${e.amount} (${e.category})\n`;
+                        });
+                        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+                    }
+                    break;
+
+                case 'setcurrency':
+                    await db.query(`UPDATE telegram_users SET currency = $1 WHERE user_id = $2`, [parsed.currency, telegramId]);
+                    await bot.sendMessage(chatId, `💱 Currency set to: **${parsed.currency}**`, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'setbudget':
+                    await setBudget(telegramId, parsed.amount);
+                    await bot.sendMessage(chatId, `🎯 Monthly budget set to: **${userCurrency}${parsed.amount.toFixed(2)}**`, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'budgetstatus':
+                    const status = await getBudgetStatus(telegramId);
+                    const curs = userCurrency;
+                    let reply = `📊 **Budget Status**\n\n`;
+                    reply += `Target: ${curs}${status.budget.toFixed(2)}\n`;
+                    reply += `Spent: ${curs}${status.spent.toFixed(2)} (${status.percentage.toFixed(1)}%)\n`;
+                    reply += `Remaining: ${curs}${status.remaining.toFixed(2)}\n`;
+
+                    if (status.remaining < 0) reply += `\n⚠️ **You have exceeded your budget!**`;
+                    else if (status.percentage > 85) reply += `\n⚠️ **Careful! You're nearing your limit.**`;
+
+                    await bot.sendMessage(chatId, reply, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'breakdown':
+                    const breakdown = await getCategoryBreakdown(telegramId);
+                    let bdMsg = `📉 **Month Breakdown**\n\n`;
+                    let hasData = false;
+                    Object.entries(breakdown).sort((a, b) => b[1] - a[1]).forEach(([c, amount]) => {
+                        if (amount > 0) {
+                            hasData = true;
+                            bdMsg += `${CATEGORIES[c]} ${c.charAt(0).toUpperCase() + c.slice(1)}: ${userCurrency}${amount.toFixed(2)}\n`;
+                        }
+                    });
+                    if (!hasData) bdMsg += "No expenses this month.";
+                    await bot.sendMessage(chatId, bdMsg, { parse_mode: 'Markdown' });
+                    break;
+
+                case 'help':
+                    // ... existing help ...
+                    const helpMsg = `
+🤖 **Expense Tracker Commands:**
+
+Add Expense:
+• \`lunch 10\` (Auto-categorized)
+• \`taxi 25 transport\` (Manual category)
+
+Reports:
+• \`today\` / \`week\` / \`month\`
+• \`recent\` (Last 5 items)
+• \`breakdown\` (Category pie chart)
+
+Budget & Settings:
+• \`budget 1000\` (Set monthly budget)
+• \`budget\` (Check status)
+• \`currency SGD\` (Set currency)
+
+Actions:
+• \`delete\` (Delete last expense)
+• \`$\` or \`dashboard\` (Get Web Link)
+`;
+                    await bot.sendMessage(chatId, helpMsg, { parse_mode: 'Markdown' });
                     break;
 
                 default:
-                    await bot.sendMessage(chatId, `❓ Unknown command. Try \`help\``);
+                    await bot.sendMessage(chatId, `❓ I didn't understand that. Try \`help\`.`);
             }
-        } catch (e) {
-            console.error(e);
-            await bot.sendMessage(chatId, `❌ Error: ${e.message}`);
+        } catch (error) {
+            console.error('Error:', error);
+            await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
         }
     });
 
+    // Handle Callback Queries (Button Clicks)
+    bot.on('callback_query', async (callbackQuery) => {
+        const message = callbackQuery.message;
+        const data = callbackQuery.data;
+        const chatId = message.chat.id;
+        const userId = callbackQuery.from.id; // Correct property for user ID
+
+        // Data format: cat_<expense_id>_<category>
+        if (data.startsWith('cat_')) {
+            const parts = data.split('_');
+            const expenseId = parts[1];
+            const newCategory = parts[2];
+            const emoji = CATEGORIES[newCategory];
+
+            try {
+                // Update the expense
+                const res = await db.query(
+                    `UPDATE telegram_expenses SET category = $1 WHERE id = $2 AND user_id = $3 RETURNING *`,
+                    [newCategory, expenseId, userId]
+                );
+
+                if (res.rowCount > 0) {
+                    const updated = res.rows[0];
+                    const amt = parseFloat(updated.amount).toFixed(2);
+
+                    // Answer the callback to remove the loading animation
+                    await bot.answerCallbackQuery(callbackQuery.id, { text: `Updated to ${newCategory}` });
+
+                    // Edit the original message to reflect the change and remove buttons
+                    const userCurRes = await db.query('SELECT currency FROM telegram_users WHERE user_id = $1', [userId]);
+                    const cur = userCurRes.rows[0]?.currency || '$';
+
+                    await bot.editMessageText(
+                        `✅ Added **${updated.description}** (${cur}${amt}) to ${emoji} **${newCategory.toUpperCase()}**.`,
+                        {
+                            chat_id: chatId,
+                            message_id: message.message_id,
+                            parse_mode: 'Markdown',
+                            reply_markup: { inline_keyboard: [] } // Remove buttons
+                        }
+                    );
+                } else {
+                    await bot.answerCallbackQuery(callbackQuery.id, { text: 'Expense not found or unauthorized' });
+                }
+            } catch (e) {
+                console.error(e);
+                await bot.answerCallbackQuery(callbackQuery.id, { text: 'Error updating category' });
+            }
+        }
+    });
     console.log('🤖 Bot started');
 }
 
