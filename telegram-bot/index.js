@@ -658,191 +658,126 @@ const dashboardHTML = `
             let html = '';
             
             // Header
-            html += \`
-                <div class="header">
-                    <h1>Hi, \${data.name.split(' ')[0]} 👋</h1>
-                    <span class="badge">\${cur}</span>
-                </div>
+            html += '<div class="header">';
+            html += '<h1>Hi, ' + (data.name ? data.name.split(' ')[0] : 'User') + ' 👋</h1>';
+            html += '<span class="badge">' + cur + '</span>';
+            html += '</div>';
 
-                <div class="summary-grid">
-                    <div class="stat-card today">
-                        <div class="stat-label">TODAY</div>
-                        <div class="stat-value">\${cur}\${data.today.total.toFixed(2)}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">WEEK</div>
-                        <div class="stat-value">\${cur}\${data.week.total.toFixed(2)}</div>
-                        <div class="stat-value">${cur}${data.week.total.toFixed(2)}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">MONTH</div>
-                        <div class="stat-value">${cur}${data.month.total.toFixed(2)}</div>
-                    </div>
-                </div>`;
+            // Summary Grid
+            html += '<div class="summary-grid">';
+            html += '<div class="stat-card today"><div class="stat-label">TODAY</div><div class="stat-value">' + cur + data.today.total.toFixed(2) + '</div></div>';
+            html += '<div class="stat-card"><div class="stat-label">WEEK</div><div class="stat-value">' + cur + data.week.total.toFixed(2) + '</div></div>';
+            html += '<div class="stat-card"><div class="stat-label">MONTH</div><div class="stat-value">' + cur + data.month.total.toFixed(2) + '</div></div>';
+            html += '</div>';
 
-// Comparison History
-if (data.comparison) {
-    const comp = data.comparison;
-    const mDiff = data.month.total - comp.lastMonth;
-    const mTrend = mDiff > 0 ? 'trend-up' : 'trend-down';
-    const mSign = mDiff > 0 ? '+' : '';
-    const yDiff = comp.thisYear - comp.lastYear;
-    const yTrend = yDiff > 0 ? 'trend-up' : 'trend-down';
-    const ySign = yDiff > 0 ? '+' : '';
+            // Comparison History
+            if (data.comparison) {
+                const comp = data.comparison;
+                const mDiff = data.month.total - comp.lastMonth;
+                const mTrend = mDiff > 0 ? 'trend-up' : 'trend-down';
+                const mSign = mDiff > 0 ? '+' : '';
+                
+                const yDiff = comp.thisYear - comp.lastYear;
+                const yTrend = yDiff > 0 ? 'trend-up' : 'trend-down';
+                const ySign = yDiff > 0 ? '+' : '';
 
-    html += `
-                <div class="section-card">
-                    <div class="section-header">
-                        <div class="section-title">Spending History</div>
-                    </div>
-                    <div class="history-grid">
-                        <div class="history-item">
-                            <div class="h-label">MONTH vs LAST</div>
-                            <div class="h-val">${cur}${data.month.total.toFixed(0)}</div>
-                            <div class="h-sub">vs ${cur}${comp.lastMonth.toFixed(0)}</div>
-                            <div class="h-sub ${mTrend}">${mSign}${cur}${Math.abs(mDiff).toFixed(0)}</div>
-                        </div>
-                        <div class="history-item">
-                            <div class="h-label">YEAR vs LAST</div>
-                            <div class="h-val">${cur}${comp.thisYear.toFixed(0)}</div>
-                            <div class="h-sub">vs ${cur}${comp.lastYear.toFixed(0)}</div>
-                            <div class="h-sub ${yTrend}">${ySign}${cur}${Math.abs(yDiff).toFixed(0)}</div>
-                        </div>
-                    </div>
-                </div>`;
-}
+                html += '<div class="section-card">';
+                html += '<div class="section-header"><div class="section-title">Spending History</div></div>';
+                html += '<div class="history-grid">';
+                
+                html += '<div class="history-item"><div class="h-label">MONTH vs LAST</div>';
+                html += '<div class="h-val">' + cur + data.month.total.toFixed(0) + '</div>';
+                html += '<div class="h-sub">vs ' + cur + comp.lastMonth.toFixed(0) + '</div>';
+                html += '<div class="h-sub ' + mTrend + '">' + mSign + cur + Math.abs(mDiff).toFixed(0) + '</div></div>';
 
-// Budget
-if (data.budget.budget > 0) {
-    html += `
-                <div class="section-card">
-                    <div class="section-header" style="margin-bottom:12px">
-                        <div class="section-title">Monthly Budget</div>
-                        <div style="font-weight:600; font-size:0.9rem">${budgetPercent.toFixed(0)}%</div>
-                    </div>
-                    <div class="budget-info">
-                        <span>Spent: ${cur}${data.budget.spent.toFixed(2)}</span>
-                        <span style="opacity:0.6">Target: ${cur}${data.budget.budget.toFixed(0)}</span>
-                    </div>
-                    <div class="progress-track">
-                        <div class="progress-fill" style="width: ${budgetPercent}%; background: ${progressBarColor}"></div>
-                    </div>
-                    <div style="text-align:right; font-size:0.8rem; margin-top:8px; color:var(--text-sub)">
-                        ${data.budget.remaining < 0 ? 'Over by' : 'Left:'} 
-                        <span style="color:${data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)'}">
-                            ${cur}${Math.abs(data.budget.remaining).toFixed(2)}
-                        </span>
-                    </div>
-                </div>`;
-}
+                html += '<div class="history-item"><div class="h-label">YEAR vs LAST</div>';
+                html += '<div class="h-val">' + cur + comp.thisYear.toFixed(0) + '</div>';
+                html += '<div class="h-sub">vs ' + cur + comp.lastYear.toFixed(0) + '</div>';
+                html += '<div class="h-sub ' + yTrend + '">' + ySign + cur + Math.abs(yDiff).toFixed(0) + '</div></div>';
+                
+                html += '</div></div>';
+            }
 
-// Calendar
-if (data.daily) {
-    const todayBtn = new Date();
-    const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
-    const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
-    const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); // 0 is Sunday
+            // Budget
+            if (data.budget.budget > 0) {
+                html += '<div class="section-card">';
+                html += '<div class="section-header" style="margin-bottom:12px"><div class="section-title">Monthly Budget</div><div style="font-weight:600; font-size:0.9rem">' + budgetPercent.toFixed(0) + '%</div></div>';
+                html += '<div class="budget-info"><span>Spent: ' + cur + data.budget.spent.toFixed(2) + '</span><span style="opacity:0.6">Target: ' + cur + data.budget.budget.toFixed(0) + '</span></div>';
+                html += '<div class="progress-track"><div class="progress-fill" style="width: ' + budgetPercent + '%; background: ' + progressBarColor + '"></div></div>';
+                html += '<div style="text-align:right; font-size:0.8rem; margin-top:8px; color:var(--text-sub)">';
+                html += (data.budget.remaining < 0 ? 'Over by' : 'Left:') + ' <span style="color:' + (data.budget.remaining < 0 ? 'var(--danger)' : 'var(--success)') + '">' + cur + Math.abs(data.budget.remaining).toFixed(2) + '</span></div>';
+                html += '</div>';
+            }
 
-    let calendarHtml = `<div class="calendar-grid">
-                    <div class="cal-day-header">S</div>
-                    <div class="cal-day-header">M</div>
-                    <div class="cal-day-header">T</div>
-                    <div class="cal-day-header">W</div>
-                    <div class="cal-day-header">T</div>
-                    <div class="cal-day-header">F</div>
-                    <div class="cal-day-header">S</div>
-                `;
+            // Calendar
+            if (data.daily) {
+                const todayBtn = new Date();
+                const currentMonth = todayBtn.toLocaleString('default', { month: 'long' });
+                const daysInMonth = new Date(todayBtn.getFullYear(), todayBtn.getMonth() + 1, 0).getDate();
+                const firstDay = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), 1).getDay(); 
+                
+                let calendarHtml = '<div class="calendar-grid">';
+                calendarHtml += '<div class="cal-day-header">S</div><div class="cal-day-header">M</div><div class="cal-day-header">T</div><div class="cal-day-header">W</div><div class="cal-day-header">T</div><div class="cal-day-header">F</div><div class="cal-day-header">S</div>';
 
-    // Empty slots
-    for (let i = 0; i < firstDay; i++) {
-        calendarHtml += `<div class="cal-day empty"></div>`;
-    }
+                for(let i=0; i<firstDay; i++) {
+                    calendarHtml += '<div class="cal-day empty"></div>';
+                }
 
-    // Days
-    for (let d = 1; d <= daysInMonth; d++) {
-        // Create YYYY-MM-DD key (careful with timezone, simplistic approach here is safer with local strings)
-        // We assume data.daily keys are local date strings from DB string
-        // Let's rely on simple string match: if today is 2023-10-05, we look for 2023-10-05
-        const dateObj = new Date(todayBtn.getFullYear(), todayBtn.getMonth(), d);
-        const dateKey = dateObj.toISOString().split('T')[0]; // UTC based, might shift.
-        // Better: construct string manually to avoid timezone shift
-        const Y = todayBtn.getFullYear();
-        const M = String(todayBtn.getMonth() + 1).padStart(2, '0');
-        const D = String(d).padStart(2, '0');
-        const localKey = `${Y}-${M}-${D}`;
+                for(let d=1; d<=daysInMonth; d++) {
+                    const Y = todayBtn.getFullYear();
+                    const M = String(todayBtn.getMonth()+1).padStart(2, '0');
+                    const D = String(d).padStart(2, '0');
+                    const localKey = Y + '-' + M + '-' + D;
 
-        const amount = data.daily[localKey] || 0;
-        const isToday = d === todayBtn.getDate();
+                    const amount = data.daily[localKey] || 0;
+                    const isToday = d === todayBtn.getDate();
+                    
+                    let classes = 'cal-day';
+                    if (isToday) classes += ' today';
+                    if (amount > 0) classes += ' has-spend';
+                    if (amount > 100) classes += ' high-spend'; 
+                    
+                    calendarHtml += '<div class="' + classes + '">' + d + (amount > 0 ? '<div class="cal-amt">' + Math.round(amount) + '</div>' : '') + '</div>';
+                }
+                calendarHtml += '</div>';
 
-        let classes = 'cal-day';
-        if (isToday) classes += ' today';
-        if (amount > 0) classes += ' has-spend';
-        if (amount > 100) classes += ' high-spend'; // Example threshold
+                html += '<div class="section-card collapsed" id="calCard">';
+                html += '<div class="section-header toggle-header" onclick="toggleCalendar()"><div class="section-title">' + currentMonth + ' Calendar</div><div class="toggle-icon">▼</div></div>';
+                html += '<div id="calendarContent" class="collapsible-content" style="max-height: 0px">' + calendarHtml + '</div>';
+                html += '</div>';
+            }
 
-        calendarHtml += `
-                        <div class="${classes}">
-                            ${d}
-                            ${amount > 0 ? `<div class="cal-amt">${Math.round(amount)}</div>` : ''}
-                        </div>`;
-    }
-    calendarHtml += '</div>';
-
-    html += `
-                    <div class="section-card collapsed" id="calCard">
-                        <div class="section-header toggle-header" onclick="toggleCalendar()">
-                            <div class="section-title">${currentMonth} Calendar</div>
-                            <div class="toggle-icon">▼</div>
-                        </div>
-                        <div id="calendarContent" class="collapsible-content" style="max-height: 0px">
-                            ${calendarHtml}
-                        </div>
-                    </div>
-                `;
-}
-
-// Charts
-html += `
-                <div class="section-card">
-                    <div class="section-header">
-                        <div class="section-title">Spending Breakdown</div>
-                    </div>
-                    ${hasCategories ? `
-                        <div class="chart-container">
-                            <canvas id="expensesChart"></canvas>
-                        </div>
-                    \` : '<div class="empty-state">No data this month yet 📉</div>'}
-                </div>\`;
+            // Charts
+            html += '<div class="section-card"><div class="section-header"><div class="section-title">Spending Breakdown</div></div>';
+            html += hasCategories ? '<div class="chart-container"><canvas id="expensesChart"></canvas></div>' : '<div class="empty-state">No data this month yet 📉</div>';
+            html += '</div>';
 
             // Recent Activity
-            html += \`
-                <div class="section-card">
-                    <div class="section-header">
-                        <div class="section-title">Recent Activity</div>
-                    </div>
-                    <div class="expense-list">
-                        \${hasExpenses ? data.expenses.map(e => \`
-                            <div class="expense-item">
-                                <div class="expense-left">
-                                    <div class="icon-box">\${emojis[e.category] || '📦'}</div>
-                                    <div class="expense-details">
-                                        <h4>\${e.description}</h4>
-                                        <p>\${new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric'})} • \${e.category}</p>
-                                    </div>
-                                </div>
-                                <div class="expense-right">
-                                    <div class="expense-amount">-\${cur}\${parseFloat(e.amount).toFixed(2)}</div>
-                                    <div class="actions">
-                                        <button class="action-btn edit" onclick="openEditModal(\${e.id})">Edit</button>
-                                        <button class="action-btn delete" onclick="deleteExpense(\${e.id})">Delete</button>
-                                    </div>
-                                </div>
-                            </div>
-                        \`).join('') : '<div class="empty-state">No transactions yet 🎉</div>'}
-                    </div>
-                </div>\`;
-            
-            document.getElementById('app').innerHTML = html;
+            html += '<div class="section-card"><div class="section-header"><div class="section-title">Recent Activity</div></div>';
+            html += '<div class="expense-list">';
+            if (!hasExpenses) {
+                html += '<div class="empty-state">No transactions yet 🎉</div>';
+            } else {
+                data.expenses.forEach(e => {
+                    const date = new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+                    const icon = emojis[e.category] || '📦';
+                    html += '<div class="expense-item">';
+                    html += '<div class="expense-left">';
+                    html += '<div class="icon-box">' + icon + '</div>';
+                    html += '<div class="expense-details"><h4>' + e.description + '</h4><p>' + date + ' • ' + e.category + '</p></div>';
+                    html += '</div>';
+                    html += '<div class="expense-right">';
+                    html += '<div class="expense-amount">-' + cur + parseFloat(e.amount).toFixed(2) + '</div>';
+                    html += '<div class="actions">';
+                    html += '<button class="action-btn edit" onclick="openEditModal(' + e.id + ')">Edit</button>';
+                    html += '<button class="action-btn delete" onclick="deleteExpense(' + e.id + ')">Delete</button>';
+                    html += '</div></div></div>';
+                });
+            }
+            html += '</div></div>';
 
+            document.getElementById('app').innerHTML = html;
+            
             if (hasCategories) renderChart(data.categories);
         }
 
